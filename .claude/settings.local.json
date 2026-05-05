@@ -13,7 +13,8 @@
       "Bash(npx tsc *)",
       "Bash(sips -g pixelWidth -g pixelHeight /Users/thomas/Projects/Miamily/public/icons/icon-192.png)",
       "Bash(sips -z 180 180 /Users/thomas/Projects/Miamily/public/icons/icon-192.png --out /Users/thomas/Projects/Miamily/public/apple-touch-icon.png)",
-      "Bash(sips -g pixelWidth -g pixelHeight /Users/thomas/Projects/Miamily/public/apple-touch-icon.png)"
+      "Bash(sips -g pixelWidth -g pixelHeight /Users/thomas/Projects/Miamily/public/apple-touch-icon.png)",
+      "Bash(pnpm run *)"
     ]
   }
 }

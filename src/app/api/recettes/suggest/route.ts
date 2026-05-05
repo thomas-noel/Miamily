@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@/lib/supabase/server'
 import { toCanonicalName } from '@/lib/canonical'
 import { daysUntilExpiry } from '@/lib/expiry'
-import { CATEGORY_LABEL, FOOD_CATEGORIES } from '@/lib/food-categories'
+import { CATEGORY_LABEL, FOOD_CATEGORIES, type FoodCategoryId } from '@/lib/food-categories'
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -85,12 +85,16 @@ function normalizeWord(s: string): string {
 }
 
 // Free-text exclusions (not category IDs) — used for hard post-filter
-const CATEGORY_ID_SET = new Set(FOOD_CATEGORIES.map((c) => c.id))
+const CATEGORY_ID_SET = new Set<FoodCategoryId>(FOOD_CATEGORIES.map((c) => c.id))
+
+function isFoodCategoryId(value: string): value is FoodCategoryId {
+  return CATEGORY_ID_SET.has(value as FoodCategoryId)
+}
 
 function buildExclusionRoots(memberPrefs: MemberPrefRow[]): string[] {
   return [...new Set(
     memberPrefs
-      .filter((p) => p.preference !== 'liked' && !CATEGORY_ID_SET.has(p.category))
+      .filter((p) => p.preference !== 'liked' && !isFoodCategoryId(p.category))
       .map((p) => normalizeWord(p.category))
       .filter((w) => w.length >= 2),
   )]
