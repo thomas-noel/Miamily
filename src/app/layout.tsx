@@ -16,6 +16,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Miamily',
   },
+  icons: {
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
 }
 
 export const viewport: Viewport = {
@@ -29,9 +32,6 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" className={`${geistSans.variable} h-full antialiased`}>
-      <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-      </head>
       <body className="min-h-full">{children}</body>
     </html>
   )
