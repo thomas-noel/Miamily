@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 
 const HEAVINESS: Record<RecipeMode, 'light' | 'normal' | 'heavy'> = {
-  leger: 'light', normal: 'normal', rapide: 'normal', familial: 'heavy',
+  leger: 'light', normal: 'normal', rapide: 'normal',
 }
 
 type Props = {

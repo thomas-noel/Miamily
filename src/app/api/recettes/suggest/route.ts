@@ -3,11 +3,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@/lib/supabase/server'
 import { toCanonicalName } from '@/lib/canonical'
 import { daysUntilExpiry } from '@/lib/expiry'
-import { CATEGORY_LABEL } from '@/lib/food-categories'
+import { CATEGORY_LABEL, FOOD_CATEGORIES } from '@/lib/food-categories'
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-export type RecipeMode = 'normal' | 'rapide' | 'leger' | 'familial'
+export type RecipeMode = 'normal' | 'rapide' | 'leger'
 
 export type RecipeIngredient = {
   name: string
@@ -63,26 +63,48 @@ type MemberPrefRow = {
   preference: 'liked' | 'disliked' | 'forbidden'
 }
 
+// Build a global aggregated exclusion list (union of all members' disliked + forbidden)
 function buildPreferencesText(members: FoodMemberRow[], memberPrefs: MemberPrefRow[]): string {
   if (members.length === 0) return ''
-  const byMember: Record<string, { liked: string[]; disliked: string[]; forbidden: string[] }> = {}
-  for (const m of members) byMember[m.id] = { liked: [], disliked: [], forbidden: [] }
+  const excluded = new Set<string>()
   for (const p of memberPrefs) {
-    byMember[p.food_member_id]?.[p.preference].push(CATEGORY_LABEL[p.category] ?? p.category)
+    if (p.preference === 'liked') continue
+    excluded.add(CATEGORY_LABEL[p.category] ?? p.category)
   }
-  const lines: string[] = ['PRÉFÉRENCES FAMILLE:']
-  for (const m of members) {
-    const mp = byMember[m.id]
-    lines.push(`${m.name}${m.is_child ? ' (enfant 4 ans)' : ''}:`)
-    if (mp.forbidden.length) lines.push(`  INTERDIT (allergie/refus absolu): ${mp.forbidden.join(', ')}`)
-    if (mp.disliked.length) lines.push(`  À éviter: ${mp.disliked.join(', ')}`)
-    if (mp.liked.length) lines.push(`  Aime: ${mp.liked.join(', ')}`)
-    if (!mp.forbidden.length && !mp.disliked.length && !mp.liked.length) {
-      lines.push('  (aucune préférence)')
-    }
-  }
-  lines.push('Règles: ne JAMAIS utiliser un ingrédient INTERDIT. Éviter autant que possible les "À éviter". Favoriser les "Aime".')
-  return lines.join('\n')
+  if (excluded.size === 0) return ''
+  return [
+    `EXCLUSIONS STRICTES (allergies + refus + non-aimés) : ${[...excluded].join(', ')}`,
+    `N'inclus AUCUN de ces aliments ni ingrédients de ces catégories dans aucune des recettes.`,
+  ].join('\n')
+}
+
+// ── Post-generation filter ─────────────────────────────────────────────
+// Strip accents + trailing 's' for fuzzy matching
+function normalizeWord(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/s$/, '').trim()
+}
+
+// Free-text exclusions (not category IDs) — used for hard post-filter
+const CATEGORY_ID_SET = new Set(FOOD_CATEGORIES.map((c) => c.id))
+
+function buildExclusionRoots(memberPrefs: MemberPrefRow[]): string[] {
+  return [...new Set(
+    memberPrefs
+      .filter((p) => p.preference !== 'liked' && !CATEGORY_ID_SET.has(p.category))
+      .map((p) => normalizeWord(p.category))
+      .filter((w) => w.length >= 2),
+  )]
+}
+
+function recipeContainsExclusion(recipe: Recipe, exclusionRoots: string[]): boolean {
+  if (exclusionRoots.length === 0) return false
+  return recipe.ingredients.some((ing) => {
+    const words = [
+      ...ing.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\W+/),
+      ...ing.canonical_name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\W+/),
+    ].map((w) => w.replace(/s$/, ''))
+    return exclusionRoots.some((exc) => words.includes(exc))
+  })
 }
 
 function prefsFingerprint(memberPrefs: MemberPrefRow[]): string {
@@ -108,9 +130,9 @@ function setCached(key: string, recipes: Recipe[]) {
   cache.set(key, { recipes, ts: Date.now() })
 }
 
-function cacheKey(householdId: string, mode: RecipeMode, inventory: InventoryRow[], lastMeal: string, lastHeaviness: string, prefsFp: string): string {
+function cacheKey(householdId: string, mode: RecipeMode, inventory: InventoryRow[], lastMeal: string, lastHeaviness: string, prefsFp: string, selectedFp: string): string {
   const fingerprint = inventory.slice(0, 15).map((i) => i.canonical_name).sort().join(',')
-  return `${householdId}:${mode}:${fingerprint}:${lastMeal}:${lastHeaviness}:${prefsFp.slice(0, 40)}`
+  return `${householdId}:${mode}:${fingerprint}:${lastMeal}:${lastHeaviness}:${prefsFp.slice(0, 40)}:${selectedFp}`
 }
 
 // ── Matching ──────────────────────────────────────────────────────────
@@ -155,14 +177,13 @@ function buildInventoryText(items: InventoryRow[]): string {
 }
 
 const MODE_PROMPT: Record<RecipeMode, string> = {
-  normal:   '2 pers. Équilibre goût/simplicité, pas de contrainte particulière.',
-  rapide:   '2 pers. MAX 20 min, ≤5 étapes. JAMAIS four, mijoter, ou cuisson longue. Types imposés: omelette, poêlée, pâtes-express, wrap, sauté rapide. duration_minutes ≤20.',
-  leger:    '2 pers. <500 kcal par portion. JAMAIS pâtes en plat principal, crème fraîche, gratin, fromage fondu en grande quantité. Imposer: légumes, œufs, poisson, salade composée, soupe légère.',
-  familial: '4 pers. Compatible enfant 4 ans: goût doux, pas épicé, présentation simple. Types: gratin, pâtes, omelette, croquettes maison. 30-50 min. persons=4.',
+  normal: 'Équilibre goût/simplicité, pas de contrainte particulière.',
+  rapide: 'MAX 20 min, ≤5 étapes. JAMAIS four, mijoter, ou cuisson longue. Types imposés: omelette, poêlée, pâtes-express, wrap, sauté rapide. duration_minutes ≤20.',
+  leger:  '<500 kcal par portion. JAMAIS pâtes en plat principal, crème fraîche, gratin, fromage fondu en grande quantité. Imposer: légumes, œufs, poisson, salade composée, soupe légère.',
 }
 
 const MODE_HEAVINESS: Record<RecipeMode, 'light' | 'normal' | 'heavy'> = {
-  leger: 'light', normal: 'normal', rapide: 'normal', familial: 'heavy',
+  leger: 'light', normal: 'normal', rapide: 'normal',
 }
 
 const TIMEOUT_MS = 10_000
@@ -190,7 +211,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const mode: RecipeMode = body.mode ?? 'normal'
   const noCache: boolean = body.noCache === true
-  console.log(`[recettes] ── REQUÊTE ── MODE="${mode}" noCache=${noCache}`)
+  const selectedMemberIds: string[] | undefined = body.selectedMemberIds
+  console.log(`[recettes] ── REQUÊTE ── MODE="${mode}" noCache=${noCache} selectedMembers=${selectedMemberIds?.length ?? 'all'}`)
 
   // DB en parallèle
   const t_db = Date.now()
@@ -232,13 +254,24 @@ export async function POST(request: NextRequest) {
   const excludes = (prefsData ?? []).filter((p) => p.type === 'exclude').map((p) => p.value as string)
   const recentMeals = (mealsData ?? []).map((m) => m.name as string)
   const lastHeaviness = (mealsData ?? [])[0]?.heaviness as string ?? ''
-  const members = (membersData ?? []) as FoodMemberRow[]
-  const memberPrefs = (memberPrefsData ?? []) as MemberPrefRow[]
+  const allMembers = (membersData ?? []) as FoodMemberRow[]
+  const allMemberPrefs = (memberPrefsData ?? []) as MemberPrefRow[]
+
+  const members = selectedMemberIds && selectedMemberIds.length > 0
+    ? allMembers.filter((m) => selectedMemberIds.includes(m.id))
+    : allMembers
+  const memberPrefs = selectedMemberIds && selectedMemberIds.length > 0
+    ? allMemberPrefs.filter((p) => selectedMemberIds.includes(p.food_member_id))
+    : allMemberPrefs
+
   const prefsFp = prefsFingerprint(memberPrefs)
-  console.log(`[recettes] lastHeaviness="${lastHeaviness || 'aucun'}" | recentMeals=${JSON.stringify(recentMeals)} | membres=${members.length} | prefs=${memberPrefs.length}`)
+  const selectedFp = selectedMemberIds && selectedMemberIds.length > 0
+    ? [...selectedMemberIds].sort().join(',')
+    : 'all'
+  console.log(`[recettes] lastHeaviness="${lastHeaviness || 'aucun'}" | recentMeals=${JSON.stringify(recentMeals)} | membres=${members.length}/${allMembers.length} | prefs=${memberPrefs.length}`)
 
   // Cache check
-  const key = cacheKey(householdId, mode, inventory, recentMeals[0] ?? '', lastHeaviness, prefsFp)
+  const key = cacheKey(householdId, mode, inventory, recentMeals[0] ?? '', lastHeaviness, prefsFp, selectedFp)
   console.log(`[recettes] cacheKey: ${key}`)
 
   if (!noCache) {
@@ -257,12 +290,19 @@ export async function POST(request: NextRequest) {
   const excludeText = excludes.length > 0 ? excludes.join(',') : 'aucun'
   const recentText = recentMeals.length > 0 ? recentMeals.join(',') : 'aucun'
 
+  const personCount = members.length > 0 ? members.length : 2
+  const hasChild = members.some((m) => m.is_child)
+  const childNote = hasChild
+    ? ' ENFANTS présents : recettes simples, peu d\'ingrédients complexes, goûts doux (pas épicé, pas fort), présentation simple.'
+    : ''
+  const modeBlock = `${personCount} pers. ${MODE_PROMPT[mode]}${childNote}`
+
   const prefsText = buildPreferencesText(members, memberPrefs)
 
   const prompt = `Stock (!Nj=périme dans N jours):
 ${inventoryText}
 
-Mode: ${MODE_PROMPT[mode]}
+Mode: ${modeBlock}
 Exclure: ${excludeText} | Éviter (déjà cuisiné): ${recentText}
 ${prefsText ? '\n' + prefsText : ''}
 3 recettes JSON DIFFÉRENTES adaptées strictement au mode et aux préférences. ≥60% du stock·!j priorité·max 3 manquants·pates=salé jamais sucré·canonical=singulier
@@ -270,7 +310,7 @@ ${prefsText ? '\n' + prefsText : ''}
 {"recipes":[{"name":"...","duration_minutes":20,"persons":2,"steps":["..."],"ingredients":[{"name":"Courgettes","canonical_name":"courgette","quantity":2,"unit":"unité(s)"}]}]}`
 
   console.log(`[recettes] prompt: ${Date.now() - t_prompt}ms — ${prompt.length} chars — ${selected.length} ingrédients`)
-  console.log(`[recettes] prompt MODE block: "${MODE_PROMPT[mode]}"`)
+  console.log(`[recettes] modeBlock: "${modeBlock}"`)
 
 
   // Appel Gemini — thinking désactivé, timeout 10s
@@ -334,7 +374,16 @@ ${prefsText ? '\n' + prefsText : ''}
     return { ...recipe, ingredients, coverage_pct, anti_gaspillage: expiringUsed.length > 0, expiring_items: expiringUsed }
   })
 
-  if (!noCache) setCached(key, recipes)
-  console.log(`[recettes] total: ${Date.now() - t_start}ms | recipes: ${recipes.map(r => r.name).join(' / ')}`)
-  return Response.json({ recipes, mode, heaviness: MODE_HEAVINESS[mode] })
+  // Post-filter: remove any recipe containing a free-text excluded ingredient
+  const exclusionRoots = buildExclusionRoots(memberPrefs)
+  const finalRecipes = exclusionRoots.length > 0
+    ? recipes.filter((r) => !recipeContainsExclusion(r, exclusionRoots))
+    : recipes
+  if (exclusionRoots.length > 0) {
+    console.log(`[recettes] post-filter: ${recipes.length}→${finalRecipes.length} recettes | exclusions: ${exclusionRoots.join(', ')}`)
+  }
+
+  if (!noCache) setCached(key, finalRecipes)
+  console.log(`[recettes] total: ${Date.now() - t_start}ms | recipes: ${finalRecipes.map(r => r.name).join(' / ')}`)
+  return Response.json({ recipes: finalRecipes, mode, heaviness: MODE_HEAVINESS[mode] })
 }

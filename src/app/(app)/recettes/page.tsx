@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronRight, Clock, Users, Flame, Check, RefreshCw, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, RecipeMode } from '@/app/api/recettes/suggest/route'
@@ -8,11 +8,12 @@ import RecipeSheet from '@/components/recipe-sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
+type FoodMember = { id: string; name: string; is_child: boolean }
+
 const MODES: { key: RecipeMode; label: string; emoji: string }[] = [
-  { key: 'normal',   label: 'Normal',   emoji: '🍽️' },
-  { key: 'rapide',   label: 'Rapide',   emoji: '⚡' },
-  { key: 'leger',    label: 'Léger',    emoji: '🥗' },
-  { key: 'familial', label: 'Familial', emoji: '👨‍👩‍👧' },
+  { key: 'normal', label: 'Normal', emoji: '🍽️' },
+  { key: 'rapide', label: 'Rapide', emoji: '⚡' },
+  { key: 'leger',  label: 'Léger',  emoji: '🥗' },
 ]
 
 type Step = 'idle' | 'loading' | 'results' | 'error'
@@ -28,9 +29,36 @@ export default function RecettesPage() {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [resultsMode, setResultsMode] = useState<RecipeMode | null>(null)
+  const [members, setMembers] = useState<FoodMember[]>([])
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
   const fetchingRef = useRef(false)
 
+  useEffect(() => {
+    async function loadMembers() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('profiles').select('household_id').eq('id', user.id).single()
+      if (!profile?.household_id) return
+      setHouseholdId(profile.household_id as string)
+      const { data } = await supabase
+        .from('food_members').select('id, name, is_child')
+        .eq('household_id', profile.household_id).order('created_at')
+      const ms = (data ?? []) as FoodMember[]
+      setMembers(ms)
+      setSelectedMemberIds(ms.map((m) => m.id))
+    }
+    loadMembers()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const isStale = step === 'results' && resultsMode !== null && mode !== resultsMode
+
+  function toggleMember(id: string) {
+    setSelectedMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
 
   async function handleSuggest() {
     if (fetchingRef.current) return
@@ -53,7 +81,7 @@ export default function RecettesPage() {
       const res = await fetch('/api/recettes/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, selectedMemberIds }),
       })
 
       let data: { error?: string; recipes?: Recipe[] }
@@ -91,7 +119,7 @@ export default function RecettesPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full overflow-hidden">
+    <div className="flex flex-col min-h-full overflow-x-hidden">
       {/* Header */}
       <div className="px-4 pt-6 pb-4">
         <h1 className="text-2xl font-semibold">Recettes</h1>
@@ -101,7 +129,7 @@ export default function RecettesPage() {
       {/* Sélecteur de mode */}
       <div className="px-4 mb-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Mode</p>
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           {MODES.map((m) => (
             <button
               key={m.key}
@@ -119,6 +147,29 @@ export default function RecettesPage() {
           ))}
         </div>
       </div>
+
+      {/* Qui mange ? */}
+      {members.length > 0 && (
+        <div className="px-4 mb-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Qui mange ?</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {members.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => toggleMember(m.id)}
+                disabled={step === 'loading'}
+                className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                  selectedMemberIds.includes(m.id)
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
+                }`}
+              >
+                {m.name}{m.is_child ? ' 👶' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Bouton principal */}
       <div className="px-4 mb-4">
@@ -216,16 +267,16 @@ function RecipeCard({ recipe, onClick }: { recipe: Recipe; onClick: () => void }
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-2xl bg-card border border-border p-4 text-left hover:border-primary/30 transition-colors overflow-hidden"
+      className="w-full max-w-full rounded-2xl bg-card border border-border p-4 text-left hover:border-primary/30 transition-colors overflow-hidden box-border"
     >
       {/* Titre + flèche */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <p className="font-semibold leading-snug line-clamp-2 min-w-0">{recipe.name}</p>
+      <div className="flex items-start justify-between gap-2 mb-3 min-w-0">
+        <p className="font-semibold leading-snug line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere]">{recipe.name}</p>
         <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground mt-0.5" />
       </div>
 
       {/* Méta */}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mb-3">
         <span className="flex items-center gap-1 shrink-0">
           <Clock className="w-3.5 h-3.5" />{recipe.duration_minutes} min
         </span>
@@ -240,7 +291,7 @@ function RecipeCard({ recipe, onClick }: { recipe: Recipe; onClick: () => void }
       {/* Badges */}
       <div className="flex flex-wrap gap-1.5">
         {recipe.anti_gaspillage && (
-          <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-700 shrink-0">
+          <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-700">
             <Flame className="w-3 h-3 mr-1" />Anti-gaspi
           </Badge>
         )}
@@ -248,18 +299,18 @@ function RecipeCard({ recipe, onClick }: { recipe: Recipe; onClick: () => void }
           <Badge
             key={i}
             variant="outline"
-            className="text-xs border-red-200 bg-red-50 text-red-600 max-w-[160px]"
+            className="text-xs border-red-200 bg-red-50 text-red-600 max-w-[9rem] overflow-hidden"
           >
-            Manque : {ing.name}
+            <span className="truncate">Manque : {ing.name}</span>
           </Badge>
         ))}
         {missing.length > 2 && (
-          <Badge variant="outline" className="text-xs border-red-200 bg-red-50 text-red-600 shrink-0">
+          <Badge variant="outline" className="text-xs border-red-200 bg-red-50 text-red-600">
             +{missing.length - 2}
           </Badge>
         )}
         {missing.length === 0 && (
-          <Badge variant="outline" className="text-xs border-green-300 bg-green-50 text-green-700 shrink-0">
+          <Badge variant="outline" className="text-xs border-green-300 bg-green-50 text-green-700">
             Tout disponible ✓
           </Badge>
         )}

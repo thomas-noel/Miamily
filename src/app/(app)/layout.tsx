@@ -21,8 +21,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!profile?.household_id) redirect('/household/create')
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <main className="flex-1 pb-20">{children}</main>
+    <div className="min-h-screen flex flex-col overflow-x-hidden">
+      <main className="flex-1 pb-20 min-w-0 w-full">{children}</main>
       <BottomNav />
     </div>
   )
