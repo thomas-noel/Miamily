@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(npm install *)",
+      "Bash(NEXT_TELEMETRY_DISABLED=1 pnpm create *)",
+      "Bash(cp *)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm dlx *)",
+      "Bash(pnpm tsc *)",
+      "Bash(node *)",
+      "Bash(xargs ls *)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
