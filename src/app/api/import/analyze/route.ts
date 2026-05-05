@@ -4,22 +4,34 @@ import { createClient } from '@/lib/supabase/server'
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-const SYSTEM_PROMPT = `Tu es un assistant qui extrait une liste de produits alimentaires à partir d'un texte de commande ou de courses.
+const SYSTEM_PROMPT = `Tu es un assistant qui extrait une liste de produits alimentaires à partir d'un texte ou d'une image (photo de frigo, placard, courses, ou ticket de caisse).
 
 Pour chaque produit détecté, retourne un objet JSON avec ces champs :
 - name: string — nom d'affichage propre en français, singulier, sans marque ni qualificatif d'origine ou de qualité (ex: "Courgette", "Lait demi-écrémé", "Tomate cerise")
-- canonical_name: string — nom racine singulier strict, uniquement le type d'aliment, en minuscules, sans aucun adjectif (ex: "courgette" pour "Courgettes bio", "lait" pour "Lait demi-écrémé Président", "tomate cerise" pour "Tomates cerises")
-- quantity: number — quantité numérique (ex: 2)
+- canonical_name: string — nom racine singulier strict, uniquement le type d'aliment, en minuscules, sans aucun adjectif (ex: "courgette", "lait", "tomate cerise")
+- quantity: number — quantité numérique estimée ; si invisible, utilise une valeur raisonnable (ex: 1)
 - unit: string — unité parmi : "g", "kg", "ml", "cl", "l", "unité(s)", "tranche(s)", "portion(s)", "boîte(s)", "sachet(s)", "bouteille(s)"
 - storage_location: "fridge" | "pantry" | "freezer" — emplacement probable
 - estimated_expiry_days: number — durée de conservation estimée en jours
 
-Règle importante sur canonical_name : "courgette", "courgettes", "courgette bio", "courgettes bio Label Rouge" doivent tous donner canonical_name = "courgette".
+Règles :
+- canonical_name ne contient JAMAIS d'adjectif : "courgette bio" → "courgette", "lait demi-écrémé Président" → "lait"
+- Si la quantité n'est pas visible sur l'image, utilise 1 par défaut
+- Pour les images, liste tous les produits visibles même si partiellement visibles
 
 Retourne UNIQUEMENT un JSON valide de la forme :
 { "items": [ { "name": "Courgette", "canonical_name": "courgette", "quantity": 1, "unit": "unité(s)", "storage_location": "fridge", "estimated_expiry_days": 7 }, ... ] }
 
 Ne retourne rien d'autre que ce JSON.`
+
+type ImportedItem = {
+  name: string
+  canonical_name: string
+  quantity: number
+  unit: string
+  storage_location: 'fridge' | 'pantry' | 'freezer'
+  estimated_expiry_days: number
+}
 
 export async function POST(request: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
@@ -42,9 +54,17 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const rawText: string = body.text ?? ''
-  if (!rawText.trim()) {
-    return Response.json({ error: 'Empty text' }, { status: 400 })
+  const image: string | undefined = body.image
+  const mimeType: string = body.mimeType ?? 'image/jpeg'
+  const locationHint: string = body.locationHint ?? 'mixed'
+
+  if (!rawText.trim() && !image) {
+    return Response.json({ error: 'Empty input' }, { status: 400 })
   }
+
+  const locationNote = locationHint !== 'mixed'
+    ? `\n\nEmplacement par défaut pour tous les produits : "${locationHint}". Utilise cet emplacement pour tous les produits détectés.`
+    : ''
 
   const model = ai.getGenerativeModel({
     model: 'gemini-2.5-flash',
@@ -53,7 +73,15 @@ export async function POST(request: NextRequest) {
 
   let result
   try {
-    result = await model.generateContent([SYSTEM_PROMPT, rawText])
+    const parts: (string | { inlineData: { mimeType: string; data: string } })[] = [
+      SYSTEM_PROMPT + locationNote,
+    ]
+    if (image) {
+      parts.push({ inlineData: { mimeType, data: image } })
+    } else {
+      parts.push(rawText)
+    }
+    result = await model.generateContent(parts)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     const isQuota = msg.includes('429') || msg.includes('quota')
@@ -63,6 +91,7 @@ export async function POST(request: NextRequest) {
         : `Erreur IA : ${msg}`,
     }, { status: 500 })
   }
+
   const aiText = result.response.text()
 
   let aiResponse: { items: ImportedItem[] }
@@ -76,8 +105,8 @@ export async function POST(request: NextRequest) {
     .from('imports')
     .insert({
       household_id: profile.household_id,
-      source: 'paste',
-      raw_text: rawText,
+      source: image ? 'photo' : 'paste',
+      raw_text: image ? '[photo import]' : rawText,
       ai_response: aiResponse,
       status: 'analyzed',
       created_by: user.id,
@@ -90,13 +119,4 @@ export async function POST(request: NextRequest) {
   }
 
   return Response.json({ importId: importRecord.id, items: aiResponse.items })
-}
-
-type ImportedItem = {
-  name: string
-  canonical_name: string
-  quantity: number
-  unit: string
-  storage_location: 'fridge' | 'pantry' | 'freezer'
-  estimated_expiry_days: number
 }

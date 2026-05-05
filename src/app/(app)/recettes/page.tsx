@@ -256,6 +256,7 @@ export default function RecettesPage() {
         recipe={selectedRecipe}
         mode={resultsMode ?? mode}
         householdId={householdId}
+        personCount={selectedMemberIds.length > 0 ? selectedMemberIds.length : 2}
       />
     </div>
   )
