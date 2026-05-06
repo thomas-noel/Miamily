@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Trash2, Loader2, Copy, Share2, Check } from 'lucide-react'
+import { Plus, Trash2, Loader2, Copy, Share2, Check, LogOut, UserMinus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { FOOD_CATEGORIES } from '@/lib/food-categories'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,8 @@ export default function PreferencesPage() {
   const [loading, setLoading] = useState(true)
   const [householdCode, setHouseholdCode] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const [leavingHousehold, setLeavingHousehold] = useState(false)
   const [hasShare] = useState(() => {
     if (typeof window === 'undefined') return false
     return 'share' in navigator
@@ -184,6 +186,23 @@ export default function PreferencesPage() {
     } catch {
       // user cancelled or share not available
     }
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut()
+    window.location.href = '/login'
+  }
+
+  async function handleLeaveHousehold() {
+    if (!householdIdRef.current) return
+    setLeavingHousehold(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await Promise.allSettled([
+      supabase.from('profiles').update({ household_id: null }).eq('id', user.id),
+      supabase.from('household_members').delete().eq('profile_id', user.id),
+    ])
+    window.location.href = '/household/join'
   }
 
   const activeMember = members.find((m) => m.id === activeMemberId) ?? null
@@ -347,6 +366,58 @@ export default function PreferencesPage() {
           />
         </div>
       )}
+      {/* Section Compte */}
+      <div className="px-4 pb-8 mt-6 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Compte
+        </p>
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:bg-muted transition-colors"
+        >
+          <LogOut className="w-5 h-5 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium">Déconnexion</span>
+        </button>
+
+        {!showLeaveConfirm ? (
+          <button
+            type="button"
+            onClick={() => setShowLeaveConfirm(true)}
+            className="w-full flex items-center gap-3 rounded-xl border border-destructive/30 bg-card p-4 text-left hover:bg-destructive/5 transition-colors"
+          >
+            <UserMinus className="w-5 h-5 text-destructive/70 shrink-0" />
+            <span className="text-sm font-medium text-destructive">Quitter la famille</span>
+          </button>
+        ) : (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+            <p className="text-sm font-semibold text-destructive">Quitter la famille ?</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Tu perdras l&apos;accès au stock et aux recettes de cette famille.
+              Tu pourras rejoindre une nouvelle famille ou en créer une.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleLeaveHousehold}
+                disabled={leavingHousehold}
+              >
+                {leavingHousehold ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmer'}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowLeaveConfirm(false)}
+                disabled={leavingHousehold}
+              >
+                Annuler
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

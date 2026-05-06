@@ -2,13 +2,17 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Check, Trash2, Camera, Mic, MicOff } from 'lucide-react'
+import {
+  ArrowLeft, Loader2, Check, Trash2,
+  Mic, MicOff, Camera, FileText, ClipboardList,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type StorageLocation = 'fridge' | 'pantry' | 'freezer'
 type LocationHint = StorageLocation | 'mixed'
+type InputMode = 'text' | 'voice' | 'photo' | 'pdf'
 
 type Item = {
   name: string
@@ -32,6 +36,13 @@ const STORAGE_EMOJI: Record<StorageLocation, string> = {
   fridge: '🧊', pantry: '🗄️', freezer: '❄️',
 }
 
+const INPUT_MODES: { key: InputMode; icon: React.ElementType; label: string }[] = [
+  { key: 'text',  icon: ClipboardList, label: 'Texte' },
+  { key: 'voice', icon: Mic,           label: 'Vocal' },
+  { key: 'photo', icon: Camera,        label: 'Photo' },
+  { key: 'pdf',   icon: FileText,      label: 'PDF' },
+]
+
 type Step = 'input' | 'loading' | 'review' | 'confirming' | 'done'
 
 function expiryLabel(days: number): string {
@@ -44,6 +55,7 @@ function expiryLabel(days: number): string {
 export default function ImporterPage() {
   const router = useRouter()
   const [step, setStep] = useState<Step>('input')
+  const [inputMode, setInputMode] = useState<InputMode>('text')
   const [text, setText] = useState('')
   const [locationHint, setLocationHint] = useState<LocationHint>('mixed')
   const [importId, setImportId] = useState('')
@@ -55,7 +67,8 @@ export default function ImporterPage() {
     if (typeof window === 'undefined') return false
     return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
   })
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const photoRef = useRef<HTMLInputElement>(null)
+  const pdfRef = useRef<HTMLInputElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
 
@@ -84,7 +97,6 @@ export default function ImporterPage() {
     }
 
     let parsed = data.items ?? []
-    // If user chose a specific location, apply it to all items
     if (locationHint !== 'mixed') {
       parsed = parsed.map((i) => ({ ...i, storage_location: locationHint as StorageLocation }))
     }
@@ -94,14 +106,14 @@ export default function ImporterPage() {
     setStep('review')
   }
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, forceMime?: string) {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string
       const base64 = dataUrl.split(',')[1]
-      const mimeType = dataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
+      const mimeType = forceMime ?? dataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
       analyze({ image: base64, mimeType })
     }
     reader.readAsDataURL(file)
@@ -109,14 +121,16 @@ export default function ImporterPage() {
   }
 
   function toggleVoice() {
-    if (!hasSpeech) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
+    if (!SR) return
+
     if (listening) {
       recognitionRef.current?.stop()
       setListening(false)
       return
     }
+
     const recognition = new SR()
     recognition.lang = 'fr-FR'
     recognition.continuous = false
@@ -173,6 +187,14 @@ export default function ImporterPage() {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
   }
 
+  function resetInput() {
+    setStep('input')
+    setText('')
+    setItems([])
+    setUpserted(0)
+    setError(null)
+  }
+
   if (step === 'done') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-6 text-center">
@@ -184,9 +206,7 @@ export default function ImporterPage() {
           {upserted} ligne{upserted > 1 ? 's' : ''} mise{upserted > 1 ? 's' : ''} à jour dans votre stock.
         </p>
         <Button onClick={() => router.push('/inventaire')} className="mt-2">Voir le stock</Button>
-        <Button variant="outline" onClick={() => { setStep('input'); setText(''); setItems([]); setUpserted(0) }}>
-          Nouvel import
-        </Button>
+        <Button variant="outline" onClick={resetInput}>Nouvel import</Button>
       </div>
     )
   }
@@ -235,70 +255,159 @@ export default function ImporterPage() {
             </div>
           </div>
 
-          {/* Textarea + actions */}
+          {/* Input mode selector */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Liste de produits
-              </p>
-              <div className="flex gap-1.5">
-                {hasSpeech && (
-                  <button
-                    type="button"
-                    onClick={toggleVoice}
-                    disabled={step === 'loading'}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors ${
-                      listening
-                        ? 'border-red-300 bg-red-50 text-red-600'
-                        : 'border-border text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {listening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                    {listening ? 'Arrêter' : 'Dicter'}
-                  </button>
-                )}
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              Comment ajouter ?
+            </p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {INPUT_MODES.map(({ key, icon: Icon, label }) => (
                 <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  key={key}
+                  onClick={() => setInputMode(key)}
                   disabled={step === 'loading'}
-                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors"
+                  className={`rounded-xl py-2.5 text-xs font-medium transition-colors flex flex-col items-center gap-1 border ${
+                    inputMode === key
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
+                  }`}
                 >
-                  <Camera className="w-3.5 h-3.5" />
-                  Photo
+                  <Icon className="w-5 h-5" />
+                  {label}
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoChange}
-                />
-              </div>
+              ))}
             </div>
-            <textarea
-              className="w-full min-h-[180px] rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
-              placeholder={"6 œufs\n500g pâtes\n2 courgettes\n1 fromage râpé\n4 yaourts\n1 boîte thon\n1 bouteille lait"}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              disabled={step === 'loading'}
-            />
           </div>
+
+          {/* Mode-specific input */}
+          {inputMode === 'text' && (
+            <div>
+              <textarea
+                className="w-full min-h-[180px] rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                placeholder={"6 œufs\n500g pâtes\n2 courgettes\n1 fromage râpé\n4 yaourts\n1 boîte thon\n1 bouteille lait"}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                disabled={step === 'loading'}
+              />
+            </div>
+          )}
+
+          {inputMode === 'voice' && (
+            <div className="space-y-3">
+              {hasSpeech ? (
+                <>
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <button
+                      type="button"
+                      onClick={toggleVoice}
+                      disabled={step === 'loading'}
+                      className={`w-20 h-20 rounded-full flex items-center justify-center transition-colors shadow-md ${
+                        listening
+                          ? 'bg-destructive text-destructive-foreground animate-pulse'
+                          : 'bg-primary text-primary-foreground'
+                      }`}
+                      aria-label={listening ? 'Arrêter la dictée' : 'Démarrer la dictée'}
+                    >
+                      {listening ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
+                    </button>
+                    <p className="text-sm text-muted-foreground text-center">
+                      {listening ? 'Dictez votre liste…' : 'Appuyez pour dicter'}
+                    </p>
+                  </div>
+                  {text && (
+                    <textarea
+                      className="w-full min-h-[100px] rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      disabled={step === 'loading'}
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="rounded-xl bg-muted px-4 py-6 text-center space-y-2">
+                  <Mic className="w-8 h-8 mx-auto text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    La dictée vocale nécessite Chrome sur Android ou un navigateur compatible.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Utilisez le mode Texte pour saisir manuellement.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {inputMode === 'photo' && (
+            <div>
+              <button
+                type="button"
+                onClick={() => photoRef.current?.click()}
+                disabled={step === 'loading'}
+                className="w-full rounded-xl border-2 border-dashed border-border hover:border-primary/50 transition-colors py-10 flex flex-col items-center gap-3 text-muted-foreground hover:text-foreground"
+              >
+                {step === 'loading'
+                  ? <Loader2 className="w-8 h-8 animate-spin" />
+                  : <Camera className="w-8 h-8" />
+                }
+                <span className="text-sm font-medium">
+                  {step === 'loading' ? 'Analyse en cours…' : 'Prendre une photo ou choisir une image'}
+                </span>
+                <span className="text-xs">Frigo, placard, liste de courses…</span>
+              </button>
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleFileChange(e)}
+              />
+            </div>
+          )}
+
+          {inputMode === 'pdf' && (
+            <div>
+              <button
+                type="button"
+                onClick={() => pdfRef.current?.click()}
+                disabled={step === 'loading'}
+                className="w-full rounded-xl border-2 border-dashed border-border hover:border-primary/50 transition-colors py-10 flex flex-col items-center gap-3 text-muted-foreground hover:text-foreground"
+              >
+                {step === 'loading'
+                  ? <Loader2 className="w-8 h-8 animate-spin" />
+                  : <FileText className="w-8 h-8" />
+                }
+                <span className="text-sm font-medium">
+                  {step === 'loading' ? 'Analyse en cours…' : 'Choisir un PDF'}
+                </span>
+                <span className="text-xs">Commande Drive, ticket de caisse…</span>
+              </button>
+              <input
+                ref={pdfRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => handleFileChange(e, 'application/pdf')}
+              />
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
           )}
 
-          <Button
-            className="w-full"
-            onClick={() => analyze({ text })}
-            disabled={step === 'loading' || !text.trim()}
-          >
-            {step === 'loading' ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…</>
-            ) : (
-              "Analyser avec l'IA"
-            )}
-          </Button>
+          {/* Analyze button — only for text and voice modes */}
+          {(inputMode === 'text' || inputMode === 'voice') && (
+            <Button
+              className="w-full"
+              onClick={() => analyze({ text })}
+              disabled={step === 'loading' || !text.trim()}
+            >
+              {step === 'loading'
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…</>
+                : "Analyser avec l'IA"
+              }
+            </Button>
+          )}
         </div>
       )}
 
@@ -330,18 +439,12 @@ export default function ImporterPage() {
               onClick={handleConfirm}
               disabled={step === 'confirming' || items.length === 0}
             >
-              {step === 'confirming' ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Ajout en cours…</>
-              ) : (
-                `Tout valider — ${items.length} produit${items.length > 1 ? 's' : ''}`
-              )}
+              {step === 'confirming'
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Ajout en cours…</>
+                : `Tout valider — ${items.length} produit${items.length > 1 ? 's' : ''}`
+              }
             </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setStep('input')}
-              disabled={step === 'confirming'}
-            >
+            <Button variant="outline" className="w-full" onClick={resetInput} disabled={step === 'confirming'}>
               Recommencer
             </Button>
           </div>
@@ -361,7 +464,6 @@ type ItemRowProps = {
 function CompactItemRow({ item, onUpdate, onRemove, disabled }: ItemRowProps) {
   return (
     <div className="rounded-xl border border-border bg-card px-3 py-2.5 space-y-2">
-      {/* Row 1: name + expiry badge + delete */}
       <div className="flex items-center gap-2">
         <Input
           value={item.name}
@@ -383,7 +485,6 @@ function CompactItemRow({ item, onUpdate, onRemove, disabled }: ItemRowProps) {
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
-      {/* Row 2: qty + unit + storage emoji buttons */}
       <div className="flex items-center gap-1.5">
         <Input
           type="number"
