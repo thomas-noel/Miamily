@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Plus, Trash2, Loader2, Copy, Share2, Check, LogOut, UserMinus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { FOOD_CATEGORIES } from '@/lib/food-categories'
+import { CUISINE_STYLES } from '@/lib/cuisine-styles'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -29,6 +30,7 @@ export default function PreferencesPage() {
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null)
   const [prefs, setPrefs] = useState<Record<string, PrefMap>>({})
   const [loading, setLoading] = useState(true)
+  const [cuisineStyles, setCuisineStyles] = useState<Set<string>>(new Set())
   const [householdCode, setHouseholdCode] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
@@ -57,15 +59,18 @@ export default function PreferencesPage() {
 
       householdIdRef.current = profile.household_id as string
 
-      const [{ data: membersData }, { data: prefsData }, { data: householdData }] = await Promise.all([
+      const [{ data: membersData }, { data: prefsData }, { data: householdData }, { data: stylesData }] = await Promise.all([
         supabase.from('food_members').select('id, name, is_child')
           .eq('household_id', profile.household_id).order('created_at'),
         supabase.from('member_preferences').select('food_member_id, category, preference')
           .eq('household_id', profile.household_id),
         supabase.from('households').select('invite_code')
           .eq('id', profile.household_id).single(),
+        supabase.from('food_preferences').select('value')
+          .eq('household_id', profile.household_id).eq('type', 'cuisine_style'),
       ])
       if (householdData) setHouseholdCode((householdData as { invite_code: string }).invite_code)
+      setCuisineStyles(new Set((stylesData ?? []).map((s: { value: string }) => s.value)))
 
       const ms = (membersData ?? []) as FoodMember[]
       setMembers(ms)
@@ -143,6 +148,26 @@ export default function PreferencesPage() {
     setMembers(remaining)
     setPrefs((prev) => { const n = { ...prev }; delete n[memberId]; return n })
     setActiveMemberId(remaining[0]?.id ?? null)
+  }
+
+  async function toggleStyle(styleId: string) {
+    if (!householdIdRef.current) return
+    const isSelected = cuisineStyles.has(styleId)
+    setCuisineStyles((prev) => {
+      const next = new Set(prev)
+      isSelected ? next.delete(styleId) : next.add(styleId)
+      return next
+    })
+    if (isSelected) {
+      await supabase.from('food_preferences')
+        .delete()
+        .eq('household_id', householdIdRef.current)
+        .eq('type', 'cuisine_style')
+        .eq('value', styleId)
+    } else {
+      await supabase.from('food_preferences')
+        .insert({ household_id: householdIdRef.current, type: 'cuisine_style', value: styleId })
+    }
   }
 
   function handleCopy() {
@@ -261,6 +286,32 @@ export default function PreferencesPage() {
           </div>
         </div>
       )}
+
+      {/* Styles de repas */}
+      <div className="mx-4 mb-6 rounded-2xl border border-border bg-card p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+          Styles de repas préférés
+        </p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Personnalise les suggestions de recettes de ta famille
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {CUISINE_STYLES.map((style) => (
+            <button
+              key={style.id}
+              type="button"
+              onClick={() => toggleStyle(style.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+                cuisineStyles.has(style.id)
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
+              }`}
+            >
+              {style.emoji} {style.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Sélecteur de membre */}
       <div className="px-4 mb-4">

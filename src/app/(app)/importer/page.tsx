@@ -109,6 +109,15 @@ export default function ImporterPage() {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, forceMime?: string) {
     const file = e.target.files?.[0]
     if (!file) return
+
+    const isPdf = forceMime === 'application/pdf'
+    const maxBytes = isPdf ? 10 * 1024 * 1024 : 5 * 1024 * 1024
+    if (file.size > maxBytes) {
+      setError(`Fichier trop volumineux (max ${isPdf ? '10 Mo' : '5 Mo'}). Réduis la taille de l'image ou choisis un fichier plus petit.`)
+      e.target.value = ''
+      return
+    }
+
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string

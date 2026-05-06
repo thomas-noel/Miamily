@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@/lib/supabase/server'
 import { parseProductList } from '@/lib/parse-product-list'
+import { checkUsage, logUsage, rateLimitMessage, type AiAction } from '@/lib/ai-rate-limit'
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -102,6 +103,15 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'Empty input' }, { status: 400 })
   }
 
+  const action: AiAction = image
+    ? mimeType === 'application/pdf' ? 'pdf_import' : 'photo_import'
+    : 'text_import'
+
+  const rateCheck = await checkUsage(supabase, user.id, action)
+  if (!rateCheck.allowed) {
+    return Response.json({ error: rateLimitMessage(rateCheck) }, { status: 429 })
+  }
+
   const locationNote = locationHint !== 'mixed'
     ? `\n\nEmplacement par défaut pour tous les produits : "${locationHint}". Utilise cet emplacement pour tous les produits détectés.`
     : ''
@@ -150,6 +160,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return Response.json({ error: 'AI parse error', raw: aiText }, { status: 500 })
   }
+
+  await logUsage(supabase, user.id, action)
 
   const { data: importRecord, error: dbError } = await supabase
     .from('imports')

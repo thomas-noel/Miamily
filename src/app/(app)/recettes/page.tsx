@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronRight, Clock, Users, Flame, Check, RefreshCw, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { Recipe, RecipeMode } from '@/app/api/recettes/suggest/route'
+import type { Recipe, RecipeMode, MealMoment, MealType } from '@/app/api/recettes/suggest/route'
 import RecipeSheet from '@/components/recipe-sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,12 +16,34 @@ const MODES: { key: RecipeMode; label: string; emoji: string }[] = [
   { key: 'leger',  label: 'Léger',  emoji: '🥗' },
 ]
 
+const MOMENTS: { key: MealMoment; label: string; emoji: string }[] = [
+  { key: 'petit-dej', label: 'Petit-déj', emoji: '🌅' },
+  { key: 'dejeuner',  label: 'Déjeuner',  emoji: '☀️' },
+  { key: 'gouter',    label: 'Goûter',    emoji: '🍪' },
+  { key: 'diner',     label: 'Dîner',     emoji: '🌙' },
+]
+
+const TYPES: { key: MealType; label: string; emoji: string }[] = [
+  { key: 'sale',  label: 'Salé',  emoji: '🧂' },
+  { key: 'sucre', label: 'Sucré', emoji: '🍯' },
+]
+
+function defaultMealMoment(): MealMoment {
+  const h = new Date().getHours()
+  if (h >= 6 && h < 10) return 'petit-dej'
+  if (h >= 11 && h < 14) return 'dejeuner'
+  if (h >= 15 && h < 18) return 'gouter'
+  return 'diner'
+}
+
 type Step = 'idle' | 'loading' | 'results' | 'error'
 
 export default function RecettesPage() {
   const supabase = createClient()
 
   const [mode, setMode] = useState<RecipeMode>('normal')
+  const [mealMoment, setMealMoment] = useState<MealMoment>(() => defaultMealMoment())
+  const [mealType, setMealType] = useState<MealType>('sale')
   const [step, setStep] = useState<Step>('idle')
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [householdId, setHouseholdId] = useState('')
@@ -29,6 +51,8 @@ export default function RecettesPage() {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [resultsMode, setResultsMode] = useState<RecipeMode | null>(null)
+  const [resultsMoment, setResultsMoment] = useState<MealMoment | null>(null)
+  const [resultsType, setResultsType] = useState<MealType | null>(null)
   const [members, setMembers] = useState<FoodMember[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
   const fetchingRef = useRef(false)
@@ -52,7 +76,9 @@ export default function RecettesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isStale = step === 'results' && resultsMode !== null && mode !== resultsMode
+  const isStale = step === 'results' && resultsMode !== null && (
+    mode !== resultsMode || mealMoment !== resultsMoment || mealType !== resultsType
+  )
 
   function toggleMember(id: string) {
     setSelectedMemberIds((prev) =>
@@ -81,7 +107,7 @@ export default function RecettesPage() {
       const res = await fetch('/api/recettes/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, selectedMemberIds }),
+        body: JSON.stringify({ mode, mealMoment, mealType, selectedMemberIds }),
       })
 
       let data: { error?: string; recipes?: Recipe[] }
@@ -107,6 +133,8 @@ export default function RecettesPage() {
 
       setRecipes(data.recipes ?? [])
       setResultsMode(mode)
+      setResultsMoment(mealMoment)
+      setResultsType(mealType)
       setStep('results')
     } finally {
       fetchingRef.current = false
@@ -124,6 +152,50 @@ export default function RecettesPage() {
       <div className="px-4 pt-6 pb-4">
         <h1 className="text-2xl font-semibold">Recettes</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Basées sur votre stock</p>
+      </div>
+
+      {/* Moment du repas */}
+      <div className="px-4 mb-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Moment</p>
+        <div className="grid grid-cols-4 gap-1.5">
+          {MOMENTS.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setMealMoment(m.key)}
+              disabled={step === 'loading'}
+              className={`rounded-xl py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 border ${
+                mealMoment === m.key
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
+              }`}
+            >
+              <span className="text-base">{m.emoji}</span>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Type salé / sucré */}
+      <div className="px-4 mb-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Type</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {TYPES.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setMealType(t.key)}
+              disabled={step === 'loading'}
+              className={`rounded-xl py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 border ${
+                mealType === t.key
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
+              }`}
+            >
+              <span className="text-base">{t.emoji}</span>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Sélecteur de mode */}

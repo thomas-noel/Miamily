@@ -4,10 +4,14 @@ import { createClient } from '@/lib/supabase/server'
 import { toCanonicalName } from '@/lib/canonical'
 import { daysUntilExpiry } from '@/lib/expiry'
 import { CATEGORY_LABEL, FOOD_CATEGORIES, type FoodCategoryId } from '@/lib/food-categories'
+import { cuisineStylesPromptLine } from '@/lib/cuisine-styles'
+import { checkUsage, logUsage, rateLimitMessage } from '@/lib/ai-rate-limit'
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
 export type RecipeMode = 'normal' | 'rapide' | 'leger'
+export type MealMoment = 'petit-dej' | 'dejeuner' | 'gouter' | 'diner'
+export type MealType = 'sale' | 'sucre'
 
 export type RecipeIngredient = {
   name: string
@@ -134,9 +138,31 @@ function setCached(key: string, recipes: Recipe[]) {
   cache.set(key, { recipes, ts: Date.now() })
 }
 
-function cacheKey(householdId: string, mode: RecipeMode, inventory: InventoryRow[], lastMeal: string, lastHeaviness: string, prefsFp: string, selectedFp: string): string {
+function buildMealContextBlock(moment: MealMoment, type: MealType): string {
+  const RULES: Record<MealMoment, Record<MealType, string>> = {
+    'petit-dej': {
+      sale:  'PETIT-DÉJEUNER SALÉ → œufs brouillés, omelette, toast salé, avocado toast. JAMAIS gâteaux, crêpes sucrées, yaourts sucrés.',
+      sucre: 'PETIT-DÉJEUNER SUCRÉ → pancakes, crêpes, pain perdu, porridge, smoothie bowl, céréales. JAMAIS plats salés.',
+    },
+    dejeuner: {
+      sale:  'DÉJEUNER SALÉ → plat principal complet et nourrissant : viande ou poisson + légumes + féculents. JAMAIS desserts, plats sucrés.',
+      sucre: 'DÉJEUNER SUCRÉ → dessert ou plat sucré pour le midi : tarte, gâteau, crêpes. JAMAIS plats salés principaux.',
+    },
+    gouter: {
+      sale:  'GOÛTER SALÉ → petite portion légère : toast, dips, fromage, œufs durs. JAMAIS plats complets, desserts sucrés.',
+      sucre: 'GOÛTER SUCRÉ → petite douceur sucrée : gâteau, cookies, compote, fruits cuits, yaourt. JAMAIS plats principaux salés.',
+    },
+    diner: {
+      sale:  'DÎNER SALÉ → plat principal du soir : repas chaud équilibré, viande/poisson/œufs + légumes. JAMAIS desserts, crêpes sucrées.',
+      sucre: 'DÎNER SUCRÉ → repas du soir sucré : crêpes sucrées, pain perdu, dessert copieux. JAMAIS plats salés principaux.',
+    },
+  }
+  return RULES[moment][type]
+}
+
+function cacheKey(householdId: string, mode: RecipeMode, moment: MealMoment, type: MealType, inventory: InventoryRow[], lastMeal: string, lastHeaviness: string, prefsFp: string, selectedFp: string, stylesFp: string): string {
   const fingerprint = inventory.slice(0, 15).map((i) => i.canonical_name).sort().join(',')
-  return `${householdId}:${mode}:${fingerprint}:${lastMeal}:${lastHeaviness}:${prefsFp.slice(0, 40)}:${selectedFp}`
+  return `${householdId}:${mode}:${moment}:${type}:${fingerprint}:${lastMeal}:${lastHeaviness}:${prefsFp.slice(0, 40)}:${selectedFp}:${stylesFp}`
 }
 
 // ── Matching ──────────────────────────────────────────────────────────
@@ -214,9 +240,11 @@ export async function POST(request: NextRequest) {
   const householdId = profile.household_id as string
   const body = await request.json()
   const mode: RecipeMode = body.mode ?? 'normal'
+  const mealMoment: MealMoment = body.mealMoment ?? 'diner'
+  const mealType: MealType = body.mealType ?? 'sale'
   const noCache: boolean = body.noCache === true
   const selectedMemberIds: string[] | undefined = body.selectedMemberIds
-  console.log(`[recettes] ── REQUÊTE ── MODE="${mode}" noCache=${noCache} selectedMembers=${selectedMemberIds?.length ?? 'all'}`)
+  console.log(`[recettes] ── REQUÊTE ── MODE="${mode}" moment="${mealMoment}" type="${mealType}" noCache=${noCache} selectedMembers=${selectedMemberIds?.length ?? 'all'}`)
 
   // DB en parallèle
   const t_db = Date.now()
@@ -256,6 +284,7 @@ export async function POST(request: NextRequest) {
   if (inventory.length === 0) return Response.json({ error: 'empty_inventory' }, { status: 400 })
 
   const excludes = (prefsData ?? []).filter((p) => p.type === 'exclude').map((p) => p.value as string)
+  const cuisineStyleIds = (prefsData ?? []).filter((p) => p.type === 'cuisine_style').map((p) => p.value as string)
   const recentMeals = (mealsData ?? []).map((m) => m.name as string)
   const lastHeaviness = (mealsData ?? [])[0]?.heaviness as string ?? ''
   const allMembers = (membersData ?? []) as FoodMemberRow[]
@@ -272,10 +301,11 @@ export async function POST(request: NextRequest) {
   const selectedFp = selectedMemberIds && selectedMemberIds.length > 0
     ? [...selectedMemberIds].sort().join(',')
     : 'all'
+  const stylesFp = [...cuisineStyleIds].sort().join(',')
   console.log(`[recettes] lastHeaviness="${lastHeaviness || 'aucun'}" | recentMeals=${JSON.stringify(recentMeals)} | membres=${members.length}/${allMembers.length} | prefs=${memberPrefs.length}`)
 
   // Cache check
-  const key = cacheKey(householdId, mode, inventory, recentMeals[0] ?? '', lastHeaviness, prefsFp, selectedFp)
+  const key = cacheKey(householdId, mode, mealMoment, mealType, inventory, recentMeals[0] ?? '', lastHeaviness, prefsFp, selectedFp, stylesFp)
   console.log(`[recettes] cacheKey: ${key}`)
 
   if (!noCache) {
@@ -286,6 +316,11 @@ export async function POST(request: NextRequest) {
     }
   }
   console.log(`[recettes] cache MISS${noCache ? ' (bypass forcé)' : ''}`)
+
+  const rateCheck = await checkUsage(supabase, user.id, 'recipe_generation')
+  if (!rateCheck.allowed) {
+    return Response.json({ error: rateLimitMessage(rateCheck) }, { status: 429 })
+  }
 
   // Construction du prompt
   const t_prompt = Date.now()
@@ -303,13 +338,17 @@ export async function POST(request: NextRequest) {
 
   const prefsText = buildPreferencesText(members, memberPrefs)
 
+  const mealContextBlock = buildMealContextBlock(mealMoment, mealType)
+  const stylesLine = cuisineStylesPromptLine(cuisineStyleIds)
+
   const prompt = `Stock (!Nj=périme dans N jours):
 ${inventoryText}
 
 Mode: ${modeBlock}
-Exclure: ${excludeText} | Éviter (déjà cuisiné): ${recentText}
+Contexte repas: ${mealContextBlock}
+${stylesLine ? stylesLine + '\n' : ''}Exclure: ${excludeText} | Éviter (déjà cuisiné): ${recentText}
 ${prefsText ? '\n' + prefsText : ''}
-3 recettes JSON DIFFÉRENTES adaptées strictement au mode et aux préférences. ≥60% du stock·!j priorité·max 3 manquants·pates=salé jamais sucré·canonical=singulier
+3 recettes JSON DIFFÉRENTES adaptées STRICTEMENT au contexte repas, au mode et aux préférences. ≥60% du stock·!j priorité·max 3 manquants·canonical=singulier
 
 {"recipes":[{"name":"...","duration_minutes":20,"persons":2,"steps":["..."],"ingredients":[{"name":"Courgettes","canonical_name":"courgette","quantity":2,"unit":"unité(s)"}]}]}`
 
@@ -387,6 +426,7 @@ ${prefsText ? '\n' + prefsText : ''}
     console.log(`[recettes] post-filter: ${recipes.length}→${finalRecipes.length} recettes | exclusions: ${exclusionRoots.join(', ')}`)
   }
 
+  await logUsage(supabase, user.id, 'recipe_generation')
   if (!noCache) setCached(key, finalRecipes)
   console.log(`[recettes] total: ${Date.now() - t_start}ms | recipes: ${finalRecipes.map(r => r.name).join(' / ')}`)
   return Response.json({ recipes: finalRecipes, mode, heaviness: MODE_HEAVINESS[mode] })
