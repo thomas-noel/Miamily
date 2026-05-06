@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Loader2, Copy, Share2, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { FOOD_CATEGORIES } from '@/lib/food-categories'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,12 @@ export default function PreferencesPage() {
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null)
   const [prefs, setPrefs] = useState<Record<string, PrefMap>>({})
   const [loading, setLoading] = useState(true)
+  const [householdCode, setHouseholdCode] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [hasShare] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return 'share' in navigator
+  })
 
   const [showAddMember, setShowAddMember] = useState(false)
   const [newMemberName, setNewMemberName] = useState('')
@@ -49,12 +55,15 @@ export default function PreferencesPage() {
 
       householdIdRef.current = profile.household_id as string
 
-      const [{ data: membersData }, { data: prefsData }] = await Promise.all([
+      const [{ data: membersData }, { data: prefsData }, { data: householdData }] = await Promise.all([
         supabase.from('food_members').select('id, name, is_child')
           .eq('household_id', profile.household_id).order('created_at'),
         supabase.from('member_preferences').select('food_member_id, category, preference')
           .eq('household_id', profile.household_id),
+        supabase.from('households').select('invite_code')
+          .eq('id', profile.household_id).single(),
       ])
+      if (householdData) setHouseholdCode((householdData as { invite_code: string }).invite_code)
 
       const ms = (membersData ?? []) as FoodMember[]
       setMembers(ms)
@@ -134,6 +143,49 @@ export default function PreferencesPage() {
     setActiveMemberId(remaining[0]?.id ?? null)
   }
 
+  function handleCopy() {
+    if (!householdCode) return
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(householdCode).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }).catch(() => fallbackCopy(householdCode))
+    } else {
+      fallbackCopy(householdCode)
+    }
+  }
+
+  function fallbackCopy(text: string) {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.focus()
+    el.select()
+    try {
+      document.execCommand('copy')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // silently ignore — user can copy manually from the displayed code
+    } finally {
+      document.body.removeChild(el)
+    }
+  }
+
+  async function handleShare() {
+    if (!householdCode) return
+    try {
+      await navigator.share({
+        title: 'Rejoindre ma famille sur Miamily',
+        text: `Utilise le code ${householdCode} pour rejoindre ma famille sur Miamily.`,
+      })
+    } catch {
+      // user cancelled or share not available
+    }
+  }
+
   const activeMember = members.find((m) => m.id === activeMemberId) ?? null
   const activePrefs: PrefMap = activeMemberId ? (prefs[activeMemberId] ?? {}) : {}
   const dislikedItems = Object.keys(activePrefs).filter((k) => activePrefs[k] === 'disliked')
@@ -160,6 +212,36 @@ export default function PreferencesPage() {
         <h1 className="text-2xl font-semibold">Famille</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Préférences alimentaires</p>
       </div>
+
+      {/* Code d'invitation */}
+      {householdCode && (
+        <div className="mx-4 mb-6 rounded-2xl border border-border bg-card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+            Code d&apos;invitation
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Partage ce code pour inviter quelqu&apos;un à rejoindre cette famille
+          </p>
+          <div className="bg-muted rounded-xl py-3 px-4 text-center mb-3">
+            <span className="font-mono text-2xl font-bold tracking-[0.25em] text-foreground select-all">
+              {householdCode}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={handleCopy}>
+              {copied
+                ? <><Check className="w-4 h-4 mr-2" />Copié !</>
+                : <><Copy className="w-4 h-4 mr-2" />Copier</>
+              }
+            </Button>
+            {hasShare && (
+              <Button variant="outline" className="flex-1" onClick={handleShare}>
+                <Share2 className="w-4 h-4 mr-2" />Partager
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Sélecteur de membre */}
       <div className="px-4 mb-4">
