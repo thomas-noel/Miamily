@@ -14,7 +14,13 @@
       "Bash(sips -g pixelWidth -g pixelHeight /Users/thomas/Projects/Miamily/public/icons/icon-192.png)",
       "Bash(sips -z 180 180 /Users/thomas/Projects/Miamily/public/icons/icon-192.png --out /Users/thomas/Projects/Miamily/public/apple-touch-icon.png)",
       "Bash(sips -g pixelWidth -g pixelHeight /Users/thomas/Projects/Miamily/public/apple-touch-icon.png)",
-      "Bash(pnpm run *)"
+      "Bash(pnpm run *)",
+      "Bash(npx skills *)",
+      "WebFetch(domain:skills.sh)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }
