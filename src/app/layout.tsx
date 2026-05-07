@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist } from 'next/font/google'
+import { Cormorant_Garamond } from 'next/font/google'
 import './globals.css'
 
-const geistSans = Geist({
-  variable: '--font-sans',
+const cormorant = Cormorant_Garamond({
+  variable: '--font-cormorant',
   subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  display: 'swap',
 })
 
 export const metadata: Metadata = {
@@ -25,13 +27,13 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  themeColor: '#16a34a',
+  themeColor: '#FAF7F0',
   viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`${geistSans.variable} h-full antialiased overflow-x-hidden`}>
+    <html lang="fr" className={`${cormorant.variable} h-full antialiased overflow-x-hidden`}>
       <body className="min-h-full overflow-x-hidden">{children}</body>
     </html>
   )

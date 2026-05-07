@@ -2,17 +2,16 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  ArrowLeft, Loader2, Check, Trash2,
-  Mic, MicOff, Camera, FileText, ClipboardList,
-} from 'lucide-react'
+import { ArrowLeft, Loader2, Check, Trash2, Mic, MicOff, Camera, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { BetaChip } from '@/components/ui/beta-chip'
+import { EmptyState } from '@/components/ui/empty-state'
 
 type StorageLocation = 'fridge' | 'pantry' | 'freezer'
 type LocationHint = StorageLocation | 'mixed'
-type InputMode = 'text' | 'voice' | 'photo' | 'pdf'
+type InputSource = 'ticket' | 'text' | 'voice'
 
 type Item = {
   name: string
@@ -25,23 +24,11 @@ type Item = {
 
 const UNITS = ['unité(s)', 'g', 'kg', 'ml', 'cl', 'l', 'tranche(s)', 'portion(s)', 'boîte(s)', 'sachet(s)', 'bouteille(s)']
 
-const LOCATION_OPTIONS: { key: LocationHint; label: string; emoji: string }[] = [
-  { key: 'fridge',  label: 'Frigo',   emoji: '🧊' },
-  { key: 'pantry',  label: 'Placard', emoji: '🗄️' },
-  { key: 'freezer', label: 'Congélo', emoji: '❄️' },
-  { key: 'mixed',   label: 'Auto',    emoji: '🤖' },
-]
-
 const STORAGE_EMOJI: Record<StorageLocation, string> = {
   fridge: '🧊', pantry: '🗄️', freezer: '❄️',
 }
 
-const INPUT_MODES: { key: InputMode; icon: React.ElementType; label: string }[] = [
-  { key: 'text',  icon: ClipboardList, label: 'Texte' },
-  { key: 'voice', icon: Mic,           label: 'Vocal' },
-  { key: 'photo', icon: Camera,        label: 'Photo' },
-  { key: 'pdf',   icon: FileText,      label: 'PDF' },
-]
+const FREQUENT_ITEMS = ['Lait', 'Pain', 'Beurre', 'Œufs', 'Pâtes', 'Riz', 'Yaourt', 'Tomates', 'Oignons']
 
 type Step = 'input' | 'loading' | 'review' | 'confirming' | 'done'
 
@@ -52,11 +39,22 @@ function expiryLabel(days: number): string {
   return `${Math.round(days / 30)}mois`
 }
 
+// Flags items that are ambiguous: very short, code-like, or barely alphabetic.
+// All-caps names are NOT flagged — ticket receipts commonly use uppercase.
+function isUncertain(item: Item): boolean {
+  const name = item.name.trim()
+  if (name.length < 3) return true
+  if (/\d{3,}/.test(name)) return true
+  const letterCount = (name.match(/[a-zA-ZÀ-ÿ]/g) ?? []).length
+  if (letterCount < 2) return true
+  return false
+}
+
 export default function ImporterPage() {
   const router = useRouter()
   const [step, setStep] = useState<Step>('input')
-  const [inputMode, setInputMode] = useState<InputMode>('text')
   const [text, setText] = useState('')
+  // locationHint kept for future UI use; default 'mixed' lets the AI assign per-product locations
   const [locationHint, setLocationHint] = useState<LocationHint>('mixed')
   const [importId, setImportId] = useState('')
   const [items, setItems] = useState<Item[]>([])
@@ -67,10 +65,15 @@ export default function ImporterPage() {
     if (typeof window === 'undefined') return false
     return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
   })
-  const photoRef = useRef<HTMLInputElement>(null)
-  const pdfRef = useRef<HTMLInputElement>(null)
+  // inputSource state: used during render (e.g. loading message)
+  // inputSourceRef: used inside async analyze() to avoid stale-closure issues
+  const [inputSource, setInputSource] = useState<InputSource>('text')
+  const ticketRef = useRef<HTMLInputElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
+  const inputSourceRef = useRef<InputSource>('text')
+
+  // ── Business logic (unchanged) ─────────────────────────────────────────────
 
   async function analyze(payload: { text?: string; image?: string; mimeType?: string }) {
     setStep('loading')
@@ -101,6 +104,16 @@ export default function ImporterPage() {
       parsed = parsed.map((i) => ({ ...i, storage_location: locationHint as StorageLocation }))
     }
 
+    if (parsed.length === 0) {
+      setError(
+        inputSourceRef.current === 'ticket'
+          ? 'Aucun produit alimentaire détecté sur ce document. Essayez avec une photo plus nette ou saisissez manuellement.'
+          : 'Aucun produit détecté. Vérifiez votre saisie et réessayez.'
+      )
+      setStep('input')
+      return
+    }
+
     setImportId(data.importId ?? '')
     setItems(parsed)
     setStep('review')
@@ -110,10 +123,10 @@ export default function ImporterPage() {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const isPdf = forceMime === 'application/pdf'
+    const isPdf = forceMime === 'application/pdf' || file.type === 'application/pdf'
     const maxBytes = isPdf ? 10 * 1024 * 1024 : 5 * 1024 * 1024
     if (file.size > maxBytes) {
-      setError(`Fichier trop volumineux (max ${isPdf ? '10 Mo' : '5 Mo'}). Réduis la taille de l'image ou choisis un fichier plus petit.`)
+      setError(`Fichier trop volumineux (max ${isPdf ? '10 Mo' : '5 Mo'}). Réduisez la taille ou choisissez un fichier plus petit.`)
       e.target.value = ''
       return
     }
@@ -122,7 +135,7 @@ export default function ImporterPage() {
     reader.onload = () => {
       const dataUrl = reader.result as string
       const base64 = dataUrl.split(',')[1]
-      const mimeType = forceMime ?? dataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
+      const mimeType = forceMime ?? file.type ?? dataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
       analyze({ image: base64, mimeType })
     }
     reader.readAsDataURL(file)
@@ -202,23 +215,179 @@ export default function ImporterPage() {
     setItems([])
     setUpserted(0)
     setError(null)
+    setLocationHint('mixed')
+    inputSourceRef.current = 'text'
+    setInputSource('text')
   }
 
-  if (step === 'done') {
+  // ── Loading ────────────────────────────────────────────────────────────────
+
+  if (step === 'loading') {
+    const isTicket = inputSource === 'ticket'
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-          <Check className="w-8 h-8 text-green-600" />
+      <div className="flex flex-col min-h-full">
+        <div className="flex items-center gap-3 px-4 pt-6 pb-4">
+          <div className="w-9 h-9 shrink-0" />
+          <h1 className="text-base font-semibold">Ajouter au stock</h1>
         </div>
-        <h2 className="text-xl font-semibold">Produits ajoutés !</h2>
-        <p className="text-muted-foreground">
-          {upserted} ligne{upserted > 1 ? 's' : ''} mise{upserted > 1 ? 's' : ''} à jour dans votre stock.
-        </p>
-        <Button onClick={() => router.push('/inventaire')} className="mt-2">Voir le stock</Button>
-        <Button variant="outline" onClick={resetInput}>Nouvel import</Button>
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 pb-24 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-primary-soft">
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-foreground">
+              {isTicket ? 'Analyse du ticket en cours…' : 'Analyse de votre liste…'}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {isTicket
+                ? 'Nous détectons les produits lisibles.'
+                : 'Identification des produits en cours…'}
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
+
+  // ── Done ──────────────────────────────────────────────────────────────────
+
+  if (step === 'done') {
+    return (
+      <div className="flex flex-col min-h-full">
+        <div className="flex items-center gap-3 px-4 pt-6 pb-4">
+          <button
+            type="button"
+            onClick={() => router.push('/inventaire')}
+            className="rounded-full p-2 hover:bg-muted transition-colors"
+            aria-label="Aller au stock"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-base font-semibold">Ajouter au stock</h1>
+        </div>
+        <EmptyState
+          icon={<Check className="w-5 h-5" />}
+          tone="success"
+          title="Produits ajoutés !"
+          subtitle={`${upserted} produit${upserted > 1 ? 's' : ''} mis à jour dans votre stock.`}
+          cta={
+            <div className="flex flex-col gap-2 w-full mt-2">
+              <Button className="w-full" onClick={() => router.push('/inventaire')}>
+                Voir le stock
+              </Button>
+              <Button variant="outline" className="w-full" onClick={resetInput}>
+                Nouvel import
+              </Button>
+            </div>
+          }
+        />
+      </div>
+    )
+  }
+
+  // ── Review / Confirming ───────────────────────────────────────────────────
+
+  if (step === 'review' || step === 'confirming') {
+    const confirmed = items.filter((item) => !isUncertain(item))
+    const uncertain = items.filter((item) => isUncertain(item))
+
+    return (
+      <div className="flex flex-col min-h-full">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 pt-6 pb-4">
+          <button
+            type="button"
+            onClick={resetInput}
+            disabled={step === 'confirming'}
+            className="rounded-full p-2 hover:bg-muted transition-colors disabled:opacity-40"
+            aria-label="Retour"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-base font-semibold flex-1">Produits détectés</h1>
+          <BetaChip />
+        </div>
+
+        {/* Scrollable content — pb-48 clears sticky CTA + nav */}
+        <div className="px-4 space-y-5 pb-48">
+          <p className="text-sm text-muted-foreground">
+            {items.length} produit{items.length > 1 ? 's' : ''} détecté{items.length > 1 ? 's' : ''}.{' '}
+            Modifiez ou supprimez avant de confirmer.
+          </p>
+
+          {error && (
+            <div className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          {confirmed.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-muted-foreground">
+                Confirmés · {confirmed.length}
+              </p>
+              {confirmed.map((item) => {
+                const idx = items.indexOf(item)
+                return (
+                  <CompactItemRow
+                    key={idx}
+                    item={item}
+                    onUpdate={(patch) => updateItem(idx, patch)}
+                    onRemove={() => removeItem(idx)}
+                    disabled={step === 'confirming'}
+                  />
+                )
+              })}
+            </div>
+          )}
+
+          {uncertain.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-accent-ink">
+                À vérifier · {uncertain.length}
+              </p>
+              {uncertain.map((item) => {
+                const idx = items.indexOf(item)
+                return (
+                  <CompactItemRow
+                    key={idx}
+                    item={item}
+                    onUpdate={(patch) => updateItem(idx, patch)}
+                    onRemove={() => removeItem(idx)}
+                    disabled={step === 'confirming'}
+                    uncertain
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Sticky CTA — sits above nav bar (pb-20 matches main layout) */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background to-transparent pt-6 px-4 pb-20 space-y-2">
+          <Button
+            className="w-full"
+            onClick={handleConfirm}
+            disabled={step === 'confirming' || items.length === 0}
+          >
+            {step === 'confirming'
+              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Ajout en cours…</>
+              : `Ajouter ${items.length} produit${items.length > 1 ? 's' : ''} au stock`}
+          </Button>
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={resetInput}
+            disabled={step === 'confirming'}
+          >
+            Recommencer
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Input screen ──────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col min-h-full">
@@ -232,253 +401,171 @@ export default function ImporterPage() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-xl font-semibold">
-          {step === 'review' || step === 'confirming' ? 'Vérifier les produits' : 'Ajouter au stock'}
-        </h1>
+        <h1 className="text-base font-semibold flex-1">Ajouter au stock</h1>
+        <BetaChip />
       </div>
 
-      {/* Input step */}
-      {(step === 'input' || step === 'loading') && (
-        <div className="px-4 space-y-4 pb-6">
-          {/* Location hint */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-              Où ajouter ces produits ?
-            </p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {LOCATION_OPTIONS.map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => setLocationHint(opt.key)}
-                  disabled={step === 'loading'}
-                  className={`rounded-xl py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 border ${
-                    locationHint === opt.key
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
-                  }`}
-                >
-                  <span className="text-base">{opt.emoji}</span>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      <div className="px-4 space-y-4 pb-8">
 
-          {/* Input mode selector */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-              Comment ajouter ?
-            </p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {INPUT_MODES.map(({ key, icon: Icon, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setInputMode(key)}
-                  disabled={step === 'loading'}
-                  className={`rounded-xl py-2.5 text-xs font-medium transition-colors flex flex-col items-center gap-1 border ${
-                    inputMode === key
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Mode-specific input */}
-          {inputMode === 'text' && (
-            <div>
-              <textarea
-                className="w-full min-h-[180px] rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
-                placeholder={"6 œufs\n500g pâtes\n2 courgettes\n1 fromage râpé\n4 yaourts\n1 boîte thon\n1 bouteille lait"}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                disabled={step === 'loading'}
-              />
-            </div>
-          )}
-
-          {inputMode === 'voice' && (
-            <div className="space-y-3">
-              {hasSpeech ? (
-                <>
-                  <div className="flex flex-col items-center gap-3 py-4">
-                    <button
-                      type="button"
-                      onClick={toggleVoice}
-                      disabled={step === 'loading'}
-                      className={`w-20 h-20 rounded-full flex items-center justify-center transition-colors shadow-md ${
-                        listening
-                          ? 'bg-destructive text-destructive-foreground animate-pulse'
-                          : 'bg-primary text-primary-foreground'
-                      }`}
-                      aria-label={listening ? 'Arrêter la dictée' : 'Démarrer la dictée'}
-                    >
-                      {listening ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
-                    </button>
-                    <p className="text-sm text-muted-foreground text-center">
-                      {listening ? 'Dictez votre liste…' : 'Appuyez pour dicter'}
-                    </p>
-                  </div>
-                  {text && (
-                    <textarea
-                      className="w-full min-h-[100px] rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      disabled={step === 'loading'}
-                    />
-                  )}
-                </>
-              ) : (
-                <div className="rounded-xl bg-muted px-4 py-6 text-center space-y-2">
-                  <Mic className="w-8 h-8 mx-auto text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
-                    La dictée vocale nécessite Chrome sur Android ou un navigateur compatible.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Utilisez le mode Texte pour saisir manuellement.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {inputMode === 'photo' && (
-            <div>
-              <button
-                type="button"
-                onClick={() => photoRef.current?.click()}
-                disabled={step === 'loading'}
-                className="w-full rounded-xl border-2 border-dashed border-border hover:border-primary/50 transition-colors py-10 flex flex-col items-center gap-3 text-muted-foreground hover:text-foreground"
-              >
-                {step === 'loading'
-                  ? <Loader2 className="w-8 h-8 animate-spin" />
-                  : <Camera className="w-8 h-8" />
-                }
-                <span className="text-sm font-medium">
-                  {step === 'loading' ? 'Analyse en cours…' : 'Prendre une photo ou choisir une image'}
-                </span>
-                <span className="text-xs">Frigo, placard, liste de courses…</span>
-              </button>
-              <input
-                ref={photoRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => handleFileChange(e)}
-              />
-            </div>
-          )}
-
-          {inputMode === 'pdf' && (
-            <div>
-              <button
-                type="button"
-                onClick={() => pdfRef.current?.click()}
-                disabled={step === 'loading'}
-                className="w-full rounded-xl border-2 border-dashed border-border hover:border-primary/50 transition-colors py-10 flex flex-col items-center gap-3 text-muted-foreground hover:text-foreground"
-              >
-                {step === 'loading'
-                  ? <Loader2 className="w-8 h-8 animate-spin" />
-                  : <FileText className="w-8 h-8" />
-                }
-                <span className="text-sm font-medium">
-                  {step === 'loading' ? 'Analyse en cours…' : 'Choisir un PDF'}
-                </span>
-                <span className="text-xs">Commande Drive, ticket de caisse…</span>
-              </button>
-              <input
-                ref={pdfRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={(e) => handleFileChange(e, 'application/pdf')}
-              />
-            </div>
-          )}
-
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          {/* Analyze button — only for text and voice modes */}
-          {(inputMode === 'text' || inputMode === 'voice') && (
-            <Button
-              className="w-full"
-              onClick={() => analyze({ text })}
-              disabled={step === 'loading' || !text.trim()}
+        {/* Error banner */}
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl bg-danger-soft px-4 py-3 text-sm text-destructive">
+            <span className="flex-1">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="shrink-0 underline"
             >
-              {step === 'loading'
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…</>
-                : "Analyser avec l'IA"
-              }
-            </Button>
-          )}
-        </div>
-      )}
+              Fermer
+            </button>
+          </div>
+        )}
 
-      {/* Review step */}
-      {(step === 'review' || step === 'confirming') && (
-        <div className="px-4 space-y-2.5 pb-6">
-          <p className="text-sm text-muted-foreground">
-            {items.length} produit{items.length > 1 ? 's' : ''} détecté{items.length > 1 ? 's' : ''}.
-            Modifie ou supprime avant de confirmer.
+        {/* ── Bloc 1 : Ticket de caisse (action principale) ─────────────── */}
+        <div className="rounded-xl border border-border bg-surface shadow-sm p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Importer un ticket de caisse</p>
+            <p className="text-sm text-muted-foreground mt-0.5">PDF, capture ou photo.</p>
+          </div>
+          <p className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-3">
+            Nous détectons les produits lisibles. Vous vérifiez avant ajout.
           </p>
+          <Button
+            variant="primary"
+            className="w-full"
+            onClick={() => ticketRef.current?.click()}
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Importer un ticket
+          </Button>
+          <input
+            ref={ticketRef}
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              inputSourceRef.current = 'ticket'
+              setInputSource('ticket')
+              handleFileChange(e)
+            }}
+          />
+        </div>
 
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
-          )}
+        {/* ── Bloc 2 : Saisie manuelle (action secondaire) ──────────────── */}
+        <div className="rounded-xl border border-border bg-surface shadow-sm p-4 space-y-3">
+          <p className="text-sm font-semibold text-foreground">Ajouter manuellement</p>
+          <textarea
+            className="w-full min-h-[120px] rounded-lg border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+            placeholder={`Tapez ou collez votre liste…\n\nExemple : yaourts x4, riz, œufs, jambon`}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => {
+              inputSourceRef.current = 'text'
+              setInputSource('text')
+              analyze({ text })
+            }}
+            disabled={!text.trim()}
+          >
+            Vérifier la liste
+          </Button>
+        </div>
 
-          {items.map((item, idx) => (
-            <CompactItemRow
-              key={idx}
-              item={item}
-              onUpdate={(patch) => updateItem(idx, patch)}
-              onRemove={() => removeItem(idx)}
-              disabled={step === 'confirming'}
-            />
-          ))}
+        {/* ── Bloc 3 : Méthodes secondaires (scan + voix) ───────────────── */}
+        <div className="flex gap-2">
+          {/* Scan — visible, non implémenté en V1 */}
+          <button
+            type="button"
+            disabled
+            title="Disponible prochainement"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface py-3 text-sm text-ink-4 cursor-not-allowed"
+          >
+            <Camera className="w-4 h-4" />
+            Scanner
+          </button>
 
-          <div className="pt-2 space-y-2">
-            <Button
-              className="w-full"
-              onClick={handleConfirm}
-              disabled={step === 'confirming' || items.length === 0}
+          {/* Voix — fonctionnel si supporté par le navigateur */}
+          {hasSpeech ? (
+            <button
+              type="button"
+              onClick={() => {
+                inputSourceRef.current = 'voice'
+                setInputSource('voice')
+                toggleVoice()
+              }}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm transition-colors ${
+                listening
+                  ? 'border-destructive bg-danger-soft text-destructive'
+                  : 'border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
             >
-              {step === 'confirming'
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Ajout en cours…</>
-                : `Tout valider — ${items.length} produit${items.length > 1 ? 's' : ''}`
-              }
-            </Button>
-            <Button variant="outline" className="w-full" onClick={resetInput} disabled={step === 'confirming'}>
-              Recommencer
-            </Button>
+              {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              {listening ? 'Arrêter' : 'Dicter'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title="Dictée non supportée sur ce navigateur"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface py-3 text-sm text-ink-4 cursor-not-allowed"
+            >
+              <Mic className="w-4 h-4" />
+              Dicter
+            </button>
+          )}
+        </div>
+
+        {/* ── Bloc 4 : Habitudes / produits fréquents ───────────────────── */}
+        <div className="space-y-2">
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-muted-foreground px-0.5">
+            Habitudes
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {FREQUENT_ITEMS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setText((prev) => prev ? `${prev}\n${item}` : item)}
+                className="rounded-full border border-border bg-surface px-3 py-1 text-sm text-foreground hover:bg-primary-soft hover:border-primary hover:text-primary-ink transition-colors"
+              >
+                {item}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+
+      </div>
     </div>
   )
 }
+
+// ── CompactItemRow ─────────────────────────────────────────────────────────────
 
 type ItemRowProps = {
   item: Item
   onUpdate: (patch: Partial<Item>) => void
   onRemove: () => void
   disabled: boolean
+  uncertain?: boolean
 }
 
-function CompactItemRow({ item, onUpdate, onRemove, disabled }: ItemRowProps) {
+function CompactItemRow({ item, onUpdate, onRemove, disabled, uncertain = false }: ItemRowProps) {
   return (
-    <div className="rounded-xl border border-border bg-card px-3 py-2.5 space-y-2">
+    <div className={`rounded-xl border px-3 py-2.5 space-y-2 ${
+      uncertain
+        ? 'border-accent-amber/50 bg-accent-soft/40'
+        : 'border-border bg-surface'
+    }`}>
+      {/* Row 1: name + expiry hint + delete */}
       <div className="flex items-center gap-2">
         <Input
           value={item.name}
           onChange={(e) => onUpdate({ name: e.target.value })}
           className="flex-1 h-8 text-sm font-medium px-2"
-          placeholder="Nom"
+          placeholder="Nom du produit"
           disabled={disabled}
         />
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
@@ -488,12 +575,14 @@ function CompactItemRow({ item, onUpdate, onRemove, disabled }: ItemRowProps) {
           type="button"
           onClick={onRemove}
           disabled={disabled}
-          className="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+          className="shrink-0 rounded p-1 hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
           aria-label="Supprimer"
         >
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Row 2: quantity + unit + storage location */}
       <div className="flex items-center gap-1.5">
         <Input
           type="number"
@@ -517,6 +606,7 @@ function CompactItemRow({ item, onUpdate, onRemove, disabled }: ItemRowProps) {
             {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
           </SelectContent>
         </Select>
+        {/* Storage location selector — kept per user requirement */}
         <div className="flex gap-1 shrink-0">
           {(['fridge', 'pantry', 'freezer'] as StorageLocation[]).map((loc) => (
             <button
@@ -525,9 +615,9 @@ function CompactItemRow({ item, onUpdate, onRemove, disabled }: ItemRowProps) {
               onClick={() => onUpdate({ storage_location: loc })}
               disabled={disabled}
               title={loc === 'fridge' ? 'Frigo' : loc === 'pantry' ? 'Placard' : 'Congélo'}
-              className={`w-8 h-8 rounded-lg border text-sm flex items-center justify-center transition-colors ${
+              className={`size-8 rounded-lg border text-sm flex items-center justify-center transition-colors ${
                 item.storage_location === loc
-                  ? 'border-primary bg-primary/10'
+                  ? 'border-primary bg-primary-soft'
                   : 'border-border text-muted-foreground hover:border-primary/50'
               }`}
             >
