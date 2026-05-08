@@ -67,7 +67,7 @@ function parseLine(raw: string): ParsedLine | null {
 
 export function parseProductList(text: string): ParsedLine[] {
   return text
-    .split(/\n+/)
+    .split(/[\n,;]+/)
     .map((l) => l.trim())
     .filter(Boolean)
     .map(parseLine)
