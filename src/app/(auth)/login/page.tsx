@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,24 +20,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function doLogin() {
     setLoading(true)
     setError(null)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        setError('Email ou mot de passe incorrect.')
+        return
+      }
 
-    if (error) {
-      setError('Email ou mot de passe incorrect.')
+      window.location.href = '/'
+    } catch {
+      setError('Erreur réseau. Vérifie ta connexion.')
+    } finally {
       setLoading(false)
-      return
     }
+  }
 
-    router.push('/')
-    router.refresh()
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    doLogin()
   }
 
   return (
@@ -78,7 +82,7 @@ export default function LoginPage() {
           </div>
         </CardContent>
         <CardFooter className="flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="button" onClick={doLogin} className="w-full" disabled={loading}>
             {loading ? 'Connexion…' : 'Se connecter'}
           </Button>
           <p className="text-sm text-muted-foreground">

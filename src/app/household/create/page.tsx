@@ -20,23 +20,31 @@ export default function CreateHouseholdPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function doCreate() {
     setLoading(true)
     setError(null)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.rpc('create_household', {
+        p_name: name.trim(),
+      })
 
-    const supabase = createClient()
-    const { error } = await supabase.rpc('create_household', {
-      p_name: name.trim(),
-    })
+      if (error) {
+        setError(error.message)
+        return
+      }
 
-    if (error) {
-      setError(error.message)
+      window.location.href = '/'
+    } catch {
+      setError('Erreur réseau. Vérifie ta connexion.')
+    } finally {
       setLoading(false)
-      return
     }
+  }
 
-    window.location.href = '/'
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    doCreate()
   }
 
   return (
@@ -66,7 +74,7 @@ export default function CreateHouseholdPage() {
               </div>
             </CardContent>
             <CardFooter className="flex-col gap-3">
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="button" onClick={doCreate} className="w-full" disabled={loading}>
                 {loading ? 'Création…' : 'Créer le foyer'}
               </Button>
               <Link

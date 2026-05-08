@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,29 +20,46 @@ export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [confirmSent, setConfirmSent] = useState(false)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function doSignup() {
     setLoading(true)
     setError(null)
+    try {
+      const supabase = createClient()
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { display_name: name.trim() } },
+      })
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: name.trim() } },
-    })
+      if (authError) {
+        setError(authError.message)
+        return
+      }
 
-    if (error) {
-      setError(error.message)
+      if (data.user && (data.user.identities?.length ?? 0) === 0) {
+        setError('Un compte existe déjà avec cette adresse email.')
+        return
+      }
+
+      if (!data.session) {
+        setConfirmSent(true)
+        return
+      }
+
+      window.location.href = '/household/create'
+    } catch {
+      setError('Erreur réseau. Vérifie ta connexion.')
+    } finally {
       setLoading(false)
-      return
     }
+  }
 
-    router.push('/household/create')
-    router.refresh()
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    doSignup()
   }
 
   return (
@@ -55,6 +71,11 @@ export default function SignupPage() {
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
+          {confirmSent && (
+            <p className="text-sm text-primary text-center font-medium">
+              Vérifie ta boîte mail pour confirmer ton compte, puis connecte-toi.
+            </p>
+          )}
           {error && (
             <p className="text-sm text-destructive text-center">{error}</p>
           )}
@@ -97,7 +118,7 @@ export default function SignupPage() {
           </div>
         </CardContent>
         <CardFooter className="flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="button" onClick={doSignup} className="w-full" disabled={loading}>
             {loading ? 'Création…' : 'Créer mon compte'}
           </Button>
           <p className="text-sm text-muted-foreground">
