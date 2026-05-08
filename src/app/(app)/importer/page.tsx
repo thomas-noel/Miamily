@@ -392,7 +392,7 @@ export default function ImporterPage() {
   return (
     <div className="flex flex-col min-h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 pt-6 pb-4">
+      <div className="flex items-center gap-3 px-4 pt-5 pb-3">
         <button
           type="button"
           onClick={() => router.back()}
@@ -405,7 +405,7 @@ export default function ImporterPage() {
         <BetaChip />
       </div>
 
-      <div className="px-4 space-y-4 pb-8">
+      <div className="px-4 space-y-3 pb-6">
 
         {/* Error banner */}
         {error && (
@@ -422,12 +422,12 @@ export default function ImporterPage() {
         )}
 
         {/* ── Bloc 1 : Ticket de caisse (action principale) ─────────────── */}
-        <div className="rounded-xl border border-border bg-surface shadow-sm p-4 space-y-3">
+        <div className="rounded-xl border border-border bg-surface shadow-sm p-3 space-y-2.5">
           <div>
             <p className="text-sm font-semibold text-foreground">Importer un ticket de caisse</p>
             <p className="text-sm text-muted-foreground mt-0.5">PDF, capture ou photo.</p>
           </div>
-          <p className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-3">
+          <p className="rounded-lg bg-surface-muted px-3 py-1.5 text-xs text-ink-3">
             Nous détectons les produits lisibles. Vous vérifiez avant ajout.
           </p>
           <Button
@@ -452,10 +452,10 @@ export default function ImporterPage() {
         </div>
 
         {/* ── Bloc 2 : Saisie manuelle (action secondaire) ──────────────── */}
-        <div className="rounded-xl border border-border bg-surface shadow-sm p-4 space-y-3">
+        <div className="rounded-xl border border-border bg-surface shadow-sm p-3 space-y-2.5">
           <p className="text-sm font-semibold text-foreground">Ajouter manuellement</p>
           <textarea
-            className="w-full min-h-[120px] rounded-lg border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+            className="w-full min-h-[90px] rounded-lg border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
             placeholder={`Tapez ou collez votre liste…\n\nExemple : yaourts x4, riz, œufs, jambon`}
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -481,7 +481,7 @@ export default function ImporterPage() {
             type="button"
             disabled
             title="Disponible prochainement"
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface py-3 text-sm text-ink-4 cursor-not-allowed"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface py-2.5 text-sm text-ink-4 cursor-not-allowed"
           >
             <Camera className="w-4 h-4" />
             Scanner
@@ -496,7 +496,7 @@ export default function ImporterPage() {
                 setInputSource('voice')
                 toggleVoice()
               }}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-3 text-sm transition-colors ${
+              className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm transition-colors ${
                 listening
                   ? 'border-destructive bg-danger-soft text-destructive'
                   : 'border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -510,7 +510,7 @@ export default function ImporterPage() {
               type="button"
               disabled
               title="Dictée non supportée sur ce navigateur"
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface py-3 text-sm text-ink-4 cursor-not-allowed"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface py-2.5 text-sm text-ink-4 cursor-not-allowed"
             >
               <Mic className="w-4 h-4" />
               Dicter
@@ -519,7 +519,7 @@ export default function ImporterPage() {
         </div>
 
         {/* ── Bloc 4 : Habitudes / produits fréquents ───────────────────── */}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-muted-foreground px-0.5">
             Habitudes
           </p>
