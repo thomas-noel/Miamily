@@ -65,11 +65,41 @@ function parseLine(raw: string): ParsedLine | null {
   return { rawName: rest, quantity, unit }
 }
 
+// Splits a single line into multiple when it contains several products with no separator.
+// Two patterns handled:
+//   "3 oeufs 5 courgettes"         → ["3 oeufs", "5 courgettes"]   (number-first)
+//   "oeufs x6 courgettes x5"       → ["oeufs x6", "courgettes x5"] (name x N)
+// Named composites ("crème fraîche", "huile d'olive") are never split — they contain no digit.
+function normalizeMultiProductLine(line: string): string[] {
+  const trimmed = line.trim()
+  if (!trimmed) return []
+
+  // Number-first: "3 oeufs 5 courgettes 2 paquets de pâtes"
+  // Split wherever a standalone number (integer or decimal) appears mid-line followed by a space.
+  if (/^\d/.test(trimmed)) {
+    const parts = trimmed.split(/\s+(?=\d+(?:[.,]\d+)?\s)/)
+    if (parts.length > 1) return parts.map((p) => p.trim()).filter(Boolean)
+  }
+
+  // Name-x-N: "oeufs x6 courgettes x5 jambon"
+  // Insert a separator after each "x N" when the next char is a letter.
+  const xnNormalized = trimmed.replace(
+    /([x×]\s*\d+(?:[.,]\d+)?)\s+(?=[a-zA-ZÀ-ÿ])/gi,
+    '$1\n',
+  )
+  if (xnNormalized !== trimmed) {
+    return xnNormalized.split('\n').map((p) => p.trim()).filter(Boolean)
+  }
+
+  return [trimmed]
+}
+
 export function parseProductList(text: string): ParsedLine[] {
   return text
     .split(/[\n,;]+/)
     .map((l) => l.trim())
     .filter(Boolean)
+    .flatMap(normalizeMultiProductLine)
     .map(parseLine)
     .filter((p): p is ParsedLine => p !== null && p.rawName.length > 0)
 }
