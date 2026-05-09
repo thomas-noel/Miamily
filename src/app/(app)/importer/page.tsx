@@ -405,7 +405,7 @@ export default function ImporterPage() {
         <BetaChip />
       </div>
 
-      <div className="px-4 space-y-3 pb-6">
+      <div className="px-4 space-y-4 pb-8">
 
         {/* Error banner */}
         {error && (
@@ -422,10 +422,10 @@ export default function ImporterPage() {
         )}
 
         {/* ── Bloc 1 : Ticket de caisse (action principale) ─────────────── */}
-        <div className="rounded-xl border border-border bg-surface shadow-sm p-3 space-y-2.5">
+        <div className="rounded-xl border border-border bg-surface shadow-sm p-4 space-y-3">
           <div>
             <p className="text-sm font-semibold text-foreground">Importer un ticket de caisse</p>
-            <p className="text-sm text-muted-foreground mt-0.5">PDF, capture ou photo.</p>
+            <p className="text-sm text-ink-3 mt-0.5">PDF, capture ou photo.</p>
           </div>
           <p className="rounded-lg bg-surface-muted px-3 py-1.5 text-xs text-ink-3">
             Nous détectons les produits lisibles. Vous vérifiez avant ajout.
@@ -452,10 +452,10 @@ export default function ImporterPage() {
         </div>
 
         {/* ── Bloc 2 : Saisie manuelle (action secondaire) ──────────────── */}
-        <div className="rounded-xl border border-border bg-surface shadow-sm p-3 space-y-2.5">
+        <div className="rounded-xl border border-border bg-surface shadow-sm p-4 space-y-3">
           <p className="text-sm font-semibold text-foreground">Ajouter manuellement</p>
           <textarea
-            className="w-full min-h-[90px] rounded-lg border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+            className="w-full min-h-[90px] rounded-lg border border-border bg-background px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-ink-3"
             placeholder={`Tapez ou collez votre liste…\n\nExemple : yaourts x4, riz, œufs, jambon`}
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -499,7 +499,7 @@ export default function ImporterPage() {
               className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm transition-colors ${
                 listening
                   ? 'border-destructive bg-danger-soft text-destructive'
-                  : 'border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-muted'
+                  : 'border-border bg-surface text-ink-3 hover:text-foreground hover:bg-muted'
               }`}
             >
               {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -519,8 +519,8 @@ export default function ImporterPage() {
         </div>
 
         {/* ── Bloc 4 : Habitudes / produits fréquents ───────────────────── */}
-        <div className="space-y-1.5">
-          <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-muted-foreground px-0.5">
+        <div className="space-y-2 pt-1">
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-ink-3 px-0.5">
             Habitudes
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -535,6 +535,14 @@ export default function ImporterPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* ── Bloc 5 : Ajoutés récemment ────────────────────────────────── */}
+        <div className="space-y-2 pt-1">
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-ink-3 px-0.5">
+            Ajoutés récemment
+          </p>
+          <p className="text-sm text-ink-3 px-0.5">Aucun ajout récent.</p>
         </div>
 
       </div>
