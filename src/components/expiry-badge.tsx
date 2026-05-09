@@ -14,18 +14,14 @@ export default function ExpiryBadge({ estimatedExpiryDate, isEstimated, classNam
 
   if (!label) return null
 
+  const variant =
+    status === 'critical' ? 'danger' :
+    status === 'warning'  ? 'warning' :
+    status === 'ok'       ? 'success' :
+    'neutral'
+
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        'text-xs font-medium shrink-0',
-        status === 'critical' && 'border-red-300 bg-red-50 text-red-700',
-        status === 'warning' && 'border-amber-300 bg-amber-50 text-amber-700',
-        status === 'ok' && 'border-green-300 bg-green-50 text-green-700',
-        status === 'unknown' && 'border-stone-200 bg-stone-50 text-stone-500',
-        className
-      )}
-    >
+    <Badge variant={variant} className={cn('shrink-0', className)}>
       {label}
     </Badge>
   )

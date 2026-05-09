@@ -152,10 +152,10 @@ export default function InventoryItemSheet({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="rounded-full p-1 hover:bg-muted transition-colors"
+              className="rounded-full p-1 hover:bg-surface-muted transition-colors"
               aria-label="Fermer"
             >
-              <X className="w-5 h-5 text-muted-foreground" />
+              <X className="w-5 h-5 text-ink-3" />
             </button>
           </div>
         </SheetHeader>
@@ -233,8 +233,8 @@ export default function InventoryItemSheet({
                   className={cn(
                     'rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
                     storage === key
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border text-muted-foreground hover:border-primary/50'
+                      ? 'border-primary bg-primary-soft text-primary-ink'
+                      : 'border-border text-ink-3 hover:border-primary/50'
                   )}
                 >
                   {label}
@@ -249,8 +249,8 @@ export default function InventoryItemSheet({
             <Popover>
               <PopoverTrigger
                 className={cn(
-                  'flex h-9 w-full items-center justify-start rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-                  !expiryDate && 'text-muted-foreground'
+                  'flex h-9 w-full items-center justify-start rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                  !expiryDate && 'text-ink-3'
                 )}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
@@ -270,7 +270,7 @@ export default function InventoryItemSheet({
             </Popover>
 
             {!expiryDate && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-ink-3">
                 ✨ Date estimée :{' '}
                 <span className="font-medium">
                   {format(new Date(finalEstimatedExpiry), 'd MMMM', { locale: fr })}
@@ -283,7 +283,7 @@ export default function InventoryItemSheet({
               <button
                 type="button"
                 onClick={() => setExpiryDate(undefined)}
-                className="text-xs text-muted-foreground underline"
+                className="text-xs text-ink-3 underline"
               >
                 Effacer la date
               </button>
