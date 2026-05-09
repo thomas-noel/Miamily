@@ -9,14 +9,16 @@ import RecipeSheet from '@/components/recipe-sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { BetaChip } from '@/components/ui/beta-chip'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
 type FoodMember = { id: string; name: string; is_child: boolean }
+type OptionSheet = 'moment' | 'mode' | 'personnes' | null
 
-const MODES: { key: RecipeMode; label: string }[] = [
-  { key: 'normal', label: 'Normal' },
-  { key: 'rapide', label: 'Rapide' },
-  { key: 'leger',  label: 'Léger'  },
+const MODES: { key: RecipeMode; label: string; description: string }[] = [
+  { key: 'normal', label: 'Normal', description: 'Recettes équilibrées du quotidien' },
+  { key: 'rapide', label: 'Rapide', description: 'Prêt en moins de 20 minutes'       },
+  { key: 'leger',  label: 'Léger',  description: 'Peu caloriques, légères'            },
 ]
 
 const MOMENTS: { key: MealMoment; label: string }[] = [
@@ -59,6 +61,7 @@ export default function RecettesPage() {
   const [resultsType, setResultsType] = useState<MealType | null>(null)
   const [members, setMembers] = useState<FoodMember[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
+  const [optionSheet, setOptionSheet] = useState<OptionSheet>(null)
   const fetchingRef = useRef(false)
 
   useEffect(() => {
@@ -84,14 +87,11 @@ export default function RecettesPage() {
     mode !== resultsMode || mealMoment !== resultsMoment || mealType !== resultsType
   )
 
-  function cycleMealMoment() {
-    const idx = MOMENTS.findIndex((m) => m.key === mealMoment)
-    setMealMoment(MOMENTS[(idx + 1) % MOMENTS.length].key)
-  }
-
-  function cycleMode() {
-    const idx = MODES.findIndex((m) => m.key === mode)
-    setMode(MODES[(idx + 1) % MODES.length].key)
+  function toggleMember(id: string) {
+    setSelectedMemberIds((prev) => {
+      if (prev.includes(id) && prev.length === 1) return prev // empêche la dernière désélection
+      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    })
   }
 
   async function handleSuggest() {
@@ -215,23 +215,24 @@ export default function RecettesPage() {
         </div>
       </div>
 
-      {/* OPTIONS — lignes interactives */}
+      {/* OPTIONS */}
       <div className="px-5 mb-6">
         <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Options</p>
         <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
           <OptionRow
             label="Moment"
             value={currentMoment.label}
-            onClick={step !== 'loading' ? cycleMealMoment : undefined}
+            onClick={step !== 'loading' ? () => setOptionSheet('moment') : undefined}
           />
           <OptionRow
             label="Personnes"
-            value={`${personCount}`}
+            value={members.length > 0 ? `${personCount}` : '–'}
+            onClick={step !== 'loading' && members.length > 0 ? () => setOptionSheet('personnes') : undefined}
           />
           <OptionRow
-            label="Difficulté"
+            label="Mode"
             value={currentMode.label}
-            onClick={step !== 'loading' ? cycleMode : undefined}
+            onClick={step !== 'loading' ? () => setOptionSheet('mode') : undefined}
           />
         </div>
       </div>
@@ -302,7 +303,119 @@ export default function RecettesPage() {
         personCount={personCount}
       />
 
-      {/* CTA sticky — positionné au-dessus de la bottom nav + safe-area */}
+      {/* ── Sheets d'options ────────────────────────────────────────────── */}
+      <Sheet open={optionSheet !== null} onOpenChange={(open) => { if (!open) setOptionSheet(null) }}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[70vh] overflow-y-auto pb-safe" showCloseButton={false}>
+
+          {/* Moment */}
+          {optionSheet === 'moment' && (
+            <>
+              <SheetHeader className="pb-2">
+                <SheetTitle>Moment du repas</SheetTitle>
+              </SheetHeader>
+              <div className="divide-y divide-border">
+                {MOMENTS.map((m) => {
+                  const isActive = mealMoment === m.key
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => { setMealMoment(m.key); setOptionSheet(null) }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-4 py-4 transition-colors text-left',
+                        isActive ? 'bg-primary-soft' : 'hover:bg-surface-muted'
+                      )}
+                    >
+                      <span className={cn('text-sm font-medium', isActive ? 'text-primary-ink' : 'text-foreground')}>
+                        {m.label}
+                      </span>
+                      {isActive && <Check className="w-4 h-4 text-primary" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Mode */}
+          {optionSheet === 'mode' && (
+            <>
+              <SheetHeader className="pb-2">
+                <SheetTitle>Mode de recette</SheetTitle>
+              </SheetHeader>
+              <div className="divide-y divide-border">
+                {MODES.map((m) => {
+                  const isActive = mode === m.key
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => { setMode(m.key); setOptionSheet(null) }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-4 py-4 transition-colors text-left',
+                        isActive ? 'bg-primary-soft' : 'hover:bg-surface-muted'
+                      )}
+                    >
+                      <div>
+                        <p className={cn('text-sm font-medium', isActive ? 'text-primary-ink' : 'text-foreground')}>
+                          {m.label}
+                        </p>
+                        <p className="text-xs text-ink-3 mt-0.5">{m.description}</p>
+                      </div>
+                      {isActive && <Check className="w-4 h-4 text-primary shrink-0 ml-3" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Personnes */}
+          {optionSheet === 'personnes' && (
+            <>
+              <SheetHeader className="pb-2">
+                <SheetTitle>Qui mange ?</SheetTitle>
+              </SheetHeader>
+              <div className="divide-y divide-border">
+                {members.map((m) => {
+                  const isSelected = selectedMemberIds.includes(m.id)
+                  const isLast = isSelected && selectedMemberIds.length === 1
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => toggleMember(m.id)}
+                      className={cn(
+                        'w-full flex items-center justify-between px-4 py-4 transition-colors text-left',
+                        isSelected ? 'bg-primary-soft' : 'hover:bg-surface-muted',
+                        isLast && 'opacity-60'
+                      )}
+                    >
+                      <div>
+                        <span className={cn('text-sm font-medium', isSelected ? 'text-primary-ink' : 'text-foreground')}>
+                          {m.name}{m.is_child ? ' 👶' : ''}
+                        </span>
+                        {isLast && (
+                          <p className="text-[11px] text-ink-3 mt-0.5">Au moins 1 personne requise</p>
+                        )}
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-primary shrink-0 ml-3" />}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="px-4 pt-3 pb-2">
+                <Button variant="secondary" className="w-full" onClick={() => setOptionSheet(null)}>
+                  Confirmer
+                </Button>
+              </div>
+            </>
+          )}
+
+        </SheetContent>
+      </Sheet>
+
+      {/* CTA sticky — au-dessus de la bottom nav + safe-area iOS */}
       <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 bg-background/95 backdrop-blur-sm border-t border-border px-5 py-3">
         {step === 'loading' ? (
           <Button variant="dark" className="w-full" disabled>
