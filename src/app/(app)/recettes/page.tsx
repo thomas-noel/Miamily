@@ -1,31 +1,34 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronRight, Clock, Users, Flame, Check, RefreshCw, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Users, Flame, Check, RefreshCw, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, RecipeMode, MealMoment, MealType } from '@/app/api/recettes/suggest/route'
 import RecipeSheet from '@/components/recipe-sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { BetaChip } from '@/components/ui/beta-chip'
+import { cn } from '@/lib/utils'
 
 type FoodMember = { id: string; name: string; is_child: boolean }
 
-const MODES: { key: RecipeMode; label: string; emoji: string }[] = [
-  { key: 'normal', label: 'Normal', emoji: '🍽️' },
-  { key: 'rapide', label: 'Rapide', emoji: '⚡' },
-  { key: 'leger',  label: 'Léger',  emoji: '🥗' },
+const MODES: { key: RecipeMode; label: string }[] = [
+  { key: 'normal', label: 'Normal' },
+  { key: 'rapide', label: 'Rapide' },
+  { key: 'leger',  label: 'Léger'  },
 ]
 
-const MOMENTS: { key: MealMoment; label: string; emoji: string }[] = [
-  { key: 'petit-dej', label: 'Petit-déj', emoji: '🌅' },
-  { key: 'dejeuner',  label: 'Déjeuner',  emoji: '☀️' },
-  { key: 'gouter',    label: 'Goûter',    emoji: '🍪' },
-  { key: 'diner',     label: 'Dîner',     emoji: '🌙' },
+const MOMENTS: { key: MealMoment; label: string }[] = [
+  { key: 'petit-dej', label: 'Matin'   },
+  { key: 'dejeuner',  label: 'Midi'    },
+  { key: 'gouter',    label: 'Goûter'  },
+  { key: 'diner',     label: 'Soir'    },
 ]
 
 const TYPES: { key: MealType; label: string; emoji: string }[] = [
-  { key: 'sale',  label: 'Salé',  emoji: '🧂' },
-  { key: 'sucre', label: 'Sucré', emoji: '🍯' },
+  { key: 'sale',  label: 'Salé',  emoji: '🥗' },
+  { key: 'sucre', label: 'Sucré', emoji: '🍰' },
 ]
 
 function defaultMealMoment(): MealMoment {
@@ -39,6 +42,7 @@ function defaultMealMoment(): MealMoment {
 type Step = 'idle' | 'loading' | 'results' | 'error'
 
 export default function RecettesPage() {
+  const router = useRouter()
   const supabase = createClient()
 
   const [mode, setMode] = useState<RecipeMode>('normal')
@@ -80,10 +84,14 @@ export default function RecettesPage() {
     mode !== resultsMode || mealMoment !== resultsMoment || mealType !== resultsType
   )
 
-  function toggleMember(id: string) {
-    setSelectedMemberIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    )
+  function cycleMealMoment() {
+    const idx = MOMENTS.findIndex((m) => m.key === mealMoment)
+    setMealMoment(MOMENTS[(idx + 1) % MOMENTS.length].key)
+  }
+
+  function cycleMode() {
+    const idx = MODES.findIndex((m) => m.key === mode)
+    setMode(MODES[(idx + 1) % MODES.length].key)
   }
 
   async function handleSuggest() {
@@ -146,149 +154,113 @@ export default function RecettesPage() {
     setSheetOpen(true)
   }
 
+  const personCount = selectedMemberIds.length > 0
+    ? selectedMemberIds.length
+    : members.length > 0 ? members.length : 2
+  const currentMoment = MOMENTS.find((m) => m.key === mealMoment)!
+  const currentMode = MODES.find((m) => m.key === mode)!
+
   return (
-    <div className="flex flex-col min-h-full overflow-x-hidden">
+    <div className="flex flex-col min-h-full overflow-x-hidden pb-44">
+
       {/* Header */}
-      <div className="px-4 pt-6 pb-4">
-        <h1 className="text-2xl font-semibold">Recettes</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Basées sur votre stock</p>
+      <div className="flex items-center justify-between px-5 pt-10 pb-2">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="rounded-full p-1.5 hover:bg-surface-muted transition-colors -ml-1.5"
+          aria-label="Retour"
+        >
+          <ChevronLeft className="w-5 h-5 text-ink-3" />
+        </button>
+        <BetaChip />
       </div>
 
-      {/* Moment du repas */}
-      <div className="px-4 mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Moment</p>
-        <div className="grid grid-cols-4 gap-1.5">
-          {MOMENTS.map((m) => (
-            <button
-              key={m.key}
-              onClick={() => setMealMoment(m.key)}
-              disabled={step === 'loading'}
-              className={`rounded-xl py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 border ${
-                mealMoment === m.key
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
-              }`}
-            >
-              <span className="text-base">{m.emoji}</span>
-              {m.label}
-            </button>
-          ))}
-        </div>
+      {/* Titre */}
+      <div className="px-5 pt-2 pb-6">
+        <h1 className="font-serif text-[32px] leading-[1.1] tracking-[-0.4px] mb-2">
+          Suggérer 3 recettes
+        </h1>
+        <p className="text-sm text-ink-3">
+          On regarde votre stock et on vous propose 3 idées.
+        </p>
       </div>
 
-      {/* Type salé / sucré */}
-      <div className="px-4 mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Type</p>
-        <div className="grid grid-cols-2 gap-1.5">
+      {/* TYPE — grandes cartes */}
+      <div className="px-5 mb-6">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Type</p>
+        <div className="grid grid-cols-2 gap-3">
           {TYPES.map((t) => (
             <button
               key={t.key}
+              type="button"
               onClick={() => setMealType(t.key)}
               disabled={step === 'loading'}
-              className={`rounded-xl py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 border ${
+              className={cn(
+                'rounded-2xl border p-5 flex flex-col items-center gap-3 transition-colors',
                 mealType === t.key
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
-              }`}
+                  ? 'bg-primary-soft border-primary'
+                  : 'bg-surface border-border hover:border-primary/30'
+              )}
             >
-              <span className="text-base">{t.emoji}</span>
-              {t.label}
+              <span className="text-4xl leading-none">{t.emoji}</span>
+              <span className={cn(
+                'text-sm font-semibold',
+                mealType === t.key ? 'text-primary-ink' : 'text-foreground'
+              )}>
+                {t.label}
+              </span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Sélecteur de mode */}
-      <div className="px-4 mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Mode</p>
-        <div className="grid grid-cols-3 gap-1.5">
-          {MODES.map((m) => (
-            <button
-              key={m.key}
-              onClick={() => setMode(m.key)}
-              disabled={step === 'loading'}
-              className={`rounded-xl py-2 text-xs font-medium transition-colors flex flex-col items-center gap-0.5 border ${
-                mode === m.key
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
-              }`}
-            >
-              <span className="text-base">{m.emoji}</span>
-              {m.label}
-            </button>
-          ))}
+      {/* OPTIONS — lignes interactives */}
+      <div className="px-5 mb-6">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Options</p>
+        <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+          <OptionRow
+            label="Moment"
+            value={currentMoment.label}
+            onClick={step !== 'loading' ? cycleMealMoment : undefined}
+          />
+          <OptionRow
+            label="Personnes"
+            value={`${personCount}`}
+          />
+          <OptionRow
+            label="Difficulté"
+            value={currentMode.label}
+            onClick={step !== 'loading' ? cycleMode : undefined}
+          />
         </div>
-      </div>
-
-      {/* Qui mange ? */}
-      {members.length > 0 && (
-        <div className="px-4 mb-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Qui mange ?</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            {members.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => toggleMember(m.id)}
-                disabled={step === 'loading'}
-                className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
-                  selectedMemberIds.includes(m.id)
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'
-                }`}
-              >
-                {m.name}{m.is_child ? ' 👶' : ''}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Bouton principal */}
-      <div className="px-4 mb-4">
-        {step === 'loading' ? (
-          <Button className="w-full" disabled>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…
-          </Button>
-        ) : isStale ? (
-          <Button className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
-            <RefreshCw className="w-4 h-4 mr-2" />Mettre à jour les suggestions
-          </Button>
-        ) : step === 'results' ? (
-          <Button variant="outline" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
-            <RefreshCw className="w-4 h-4 mr-2" />Relancer
-          </Button>
-        ) : (
-          <Button className="w-full" onClick={handleSuggest}>
-            Suggérer des recettes
-          </Button>
-        )}
       </div>
 
       {/* Erreur */}
       {step === 'error' && error && (
-        <div className="mx-4 mb-4 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive break-words">
+        <div className="mx-5 mb-5 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive break-words">
           {error}
         </div>
       )}
 
-      {/* Skeleton loading */}
+      {/* Skeleton */}
       {step === 'loading' && (
-        <div className="px-4 space-y-3 pb-6">
-          <p className="text-xs text-muted-foreground text-center mb-2">Gemini analyse votre stock…</p>
+        <div className="px-5 space-y-3">
+          <p className="text-xs text-ink-3 text-center mb-2">Gemini analyse votre stock…</p>
           {[0, 1, 2].map((i) => (
             <div key={i} className="rounded-2xl border border-border p-4 space-y-3 animate-pulse">
               <div className="flex items-start justify-between gap-2">
-                <div className="h-4 bg-muted rounded w-3/5" />
-                <div className="h-4 bg-muted rounded w-4" />
+                <div className="h-4 bg-surface-muted rounded w-3/5" />
+                <div className="h-4 bg-surface-muted rounded w-4" />
               </div>
               <div className="flex gap-3">
-                <div className="h-3 bg-muted rounded w-14" />
-                <div className="h-3 bg-muted rounded w-10" />
-                <div className="h-3 bg-muted rounded w-10" />
+                <div className="h-3 bg-surface-muted rounded w-14" />
+                <div className="h-3 bg-surface-muted rounded w-10" />
+                <div className="h-3 bg-surface-muted rounded w-10" />
               </div>
               <div className="flex gap-2">
-                <div className="h-5 bg-muted rounded-full w-20" />
-                <div className="h-5 bg-muted rounded-full w-28" />
+                <div className="h-5 bg-surface-muted rounded-full w-20" />
+                <div className="h-5 bg-surface-muted rounded-full w-28" />
               </div>
             </div>
           ))}
@@ -297,22 +269,21 @@ export default function RecettesPage() {
 
       {/* Résultats */}
       {step === 'results' && (
-        <div className="px-4 space-y-3 pb-6">
-          {/* Indicateur de stale */}
+        <div className="px-5 space-y-3">
           {isStale && (
-            <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-700 flex items-center gap-2">
+            <div className="rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent-ink flex items-center gap-2">
               <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              Mode modifié — mettez à jour les suggestions
+              Paramètres modifiés — mettez à jour les suggestions
             </div>
           )}
-          {/* Mode des recettes affichées */}
           {resultsMode && (
-            <p className="text-xs text-muted-foreground">
-              Recettes en mode <strong className="text-foreground">{MODES.find((m) => m.key === resultsMode)?.label}</strong>
+            <p className="text-xs text-ink-3">
+              Recettes en mode{' '}
+              <strong className="text-foreground">{MODES.find((m) => m.key === resultsMode)?.label}</strong>
             </p>
           )}
           {recipes.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">
+            <p className="text-center text-ink-3 py-8">
               Aucune recette trouvée avec votre stock actuel.
             </p>
           )}
@@ -328,11 +299,57 @@ export default function RecettesPage() {
         recipe={selectedRecipe}
         mode={resultsMode ?? mode}
         householdId={householdId}
-        personCount={selectedMemberIds.length > 0 ? selectedMemberIds.length : 2}
+        personCount={personCount}
       />
+
+      {/* CTA sticky — positionné au-dessus de la bottom nav + safe-area */}
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 bg-background/95 backdrop-blur-sm border-t border-border px-5 py-3">
+        {step === 'loading' ? (
+          <Button variant="dark" className="w-full" disabled>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…
+          </Button>
+        ) : isStale ? (
+          <Button variant="dark" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
+            <RefreshCw className="w-4 h-4 mr-2" />Mettre à jour les suggestions
+          </Button>
+        ) : step === 'results' ? (
+          <Button variant="secondary" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
+            <RefreshCw className="w-4 h-4 mr-2" />Relancer
+          </Button>
+        ) : (
+          <Button variant="dark" className="w-full" onClick={handleSuggest}>
+            Suggérer 3 recettes
+          </Button>
+        )}
+      </div>
+
     </div>
   )
 }
+
+// ── OptionRow ──────────────────────────────────────────────────────────────
+
+function OptionRow({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={cn(
+        'w-full flex items-center justify-between px-4 py-3.5 bg-surface text-left transition-colors',
+        onClick ? 'hover:bg-surface-muted cursor-pointer' : 'cursor-default'
+      )}
+    >
+      <span className="text-sm text-foreground">{label}</span>
+      <span className="text-sm font-semibold text-foreground flex items-center gap-1">
+        {value}
+        {onClick && <ChevronRight className="w-3.5 h-3.5 text-ink-3" />}
+      </span>
+    </button>
+  )
+}
+
+// ── RecipeCard ─────────────────────────────────────────────────────────────
 
 function RecipeCard({ recipe, onClick }: { recipe: Recipe; onClick: () => void }) {
   const missing = recipe.ingredients.filter((i) => !i.available)
@@ -340,52 +357,43 @@ function RecipeCard({ recipe, onClick }: { recipe: Recipe; onClick: () => void }
   return (
     <button
       onClick={onClick}
-      className="w-full max-w-full rounded-2xl bg-card border border-border p-4 text-left hover:border-primary/30 transition-colors overflow-hidden box-border"
+      className="w-full max-w-full rounded-2xl bg-surface border border-border p-4 text-left hover:border-primary/30 transition-colors overflow-hidden box-border"
     >
-      {/* Titre + flèche */}
       <div className="flex items-start justify-between gap-2 mb-3 min-w-0">
-        <p className="font-semibold leading-snug line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere]">{recipe.name}</p>
-        <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground mt-0.5" />
+        <p className="font-medium leading-snug line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere]">
+          {recipe.name}
+        </p>
+        <ChevronRight className="w-4 h-4 shrink-0 text-ink-3 mt-0.5" />
       </div>
 
-      {/* Méta */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mb-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3 mb-3">
         <span className="flex items-center gap-1 shrink-0">
           <Clock className="w-3.5 h-3.5" />{recipe.duration_minutes} min
         </span>
         <span className="flex items-center gap-1 shrink-0">
           <Users className="w-3.5 h-3.5" />{recipe.persons} pers.
         </span>
-        <span className="flex items-center gap-1 shrink-0 font-medium text-green-700">
+        <span className="flex items-center gap-1 shrink-0 font-medium text-primary">
           <Check className="w-3.5 h-3.5" />{recipe.coverage_pct}%
         </span>
       </div>
 
-      {/* Badges */}
       <div className="flex flex-wrap gap-1.5">
         {recipe.anti_gaspillage && (
-          <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-700">
+          <Badge variant="warning">
             <Flame className="w-3 h-3 mr-1" />Anti-gaspi
           </Badge>
         )}
         {missing.slice(0, 2).map((ing, i) => (
-          <Badge
-            key={i}
-            variant="outline"
-            className="text-xs border-red-200 bg-red-50 text-red-600 max-w-[9rem] overflow-hidden"
-          >
+          <Badge key={i} variant="danger" className="max-w-[9rem] overflow-hidden">
             <span className="truncate">Manque : {ing.name}</span>
           </Badge>
         ))}
         {missing.length > 2 && (
-          <Badge variant="outline" className="text-xs border-red-200 bg-red-50 text-red-600">
-            +{missing.length - 2}
-          </Badge>
+          <Badge variant="danger">+{missing.length - 2}</Badge>
         )}
         {missing.length === 0 && (
-          <Badge variant="outline" className="text-xs border-green-300 bg-green-50 text-green-700">
-            Tout disponible ✓
-          </Badge>
+          <Badge variant="success">Tout disponible ✓</Badge>
         )}
       </div>
     </button>
