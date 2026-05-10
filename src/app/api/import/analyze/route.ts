@@ -120,12 +120,16 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: rateLimitMessage(rateCheck) }, { status: 429 })
   }
 
+  console.log('[analyze]', { action, mimeType, base64KB: image ? Math.round(image.length / 1024) : 0 })
+
   const locationNote = locationHint !== 'mixed'
     ? `\n\nEmplacement par défaut pour tous les produits : "${locationHint}". Utilise cet emplacement pour tous les produits détectés.`
     : ''
 
+  // gemini-2.5-flash-lite for photo: lightweight 2.5 model, no thinking latency, fast OCR.
+  // gemini-2.5-flash for PDF/text: better at structured document reasoning.
   const model = ai.getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: action === 'photo_import' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash',
     generationConfig: { responseMimeType: 'application/json' },
   })
 
@@ -160,6 +164,7 @@ export async function POST(request: NextRequest) {
     ])
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    console.error('[analyze] Gemini threw:', msg)
     if (msg === 'GEMINI_TIMEOUT') {
       return Response.json({
         error: "L'analyse du ticket a pris trop de temps. Essayez une photo plus nette ou ajoutez vos produits sous forme de liste.",
@@ -173,7 +178,15 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 
-  const aiText = result.response.text()
+  let aiText: string
+  try {
+    aiText = result.response.text()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[analyze] response.text() threw:', msg)
+    return Response.json({ error: `Erreur IA : ${msg}` }, { status: 500 })
+  }
+
   let aiResponse: { items: ImportedItem[] }
   try {
     aiResponse = JSON.parse(aiText)

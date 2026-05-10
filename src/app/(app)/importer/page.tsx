@@ -153,27 +153,87 @@ export default function ImporterPage() {
     abortControllerRef.current?.abort()
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, forceMime?: string) {
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    e.target.value = ''
 
-    const isPdf = forceMime === 'application/pdf' || file.type === 'application/pdf'
-    const maxBytes = isPdf ? 10 * 1024 * 1024 : 5 * 1024 * 1024
-    if (file.size > maxBytes) {
-      setError(`Fichier trop volumineux (max ${isPdf ? '10 Mo' : '5 Mo'}). Réduisez la taille ou choisissez un fichier plus petit.`)
-      e.target.value = ''
+    // PDF : envoi direct, sans canvas
+    if (file.type === 'application/pdf') {
+      if (file.size > 10 * 1024 * 1024) {
+        setError('PDF trop volumineux (max 10 Mo). Essayez avec un fichier plus petit.')
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        analyze({ image: dataUrl.split(',')[1], mimeType: 'application/pdf' })
+      }
+      reader.readAsDataURL(file)
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      const base64 = dataUrl.split(',')[1]
-      const mimeType = forceMime ?? file.type ?? dataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
-      analyze({ image: base64, mimeType })
+    // Image : conversion JPEG via canvas (compresse + convertit HEIC sur Safari)
+    const isHeic =
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      file.name.toLowerCase().endsWith('.heic') ||
+      file.name.toLowerCase().endsWith('.heif')
+
+    const objectUrl = URL.createObjectURL(file)
+    const img = new Image()
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      setError(
+        isHeic
+          ? "Les photos HEIC/HEIF (iPhone) ne sont pas supportées sur ce navigateur. Dans Réglages › Appareil photo › Formats, activez « Format le plus compatible », puis réessayez."
+          : 'Impossible de lire cette image. Essayez avec un autre format (JPEG ou PNG).'
+      )
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
+
+    img.onload = () => {
+      // Redimensionne à 1200 px max — suffisant pour lire un ticket, réduit le payload de ~60 %
+      let w = img.naturalWidth
+      let h = img.naturalHeight
+      const maxDim = 1200
+      if (w > maxDim || h > maxDim) {
+        const scale = maxDim / Math.max(w, h)
+        w = Math.round(w * scale)
+        h = Math.round(h * scale)
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl)
+        setError('Impossible de traiter cette image.')
+        return
+      }
+      ctx.drawImage(img, 0, 0, w, h)
+      URL.revokeObjectURL(objectUrl)
+
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          setError('Impossible de compresser cette image.')
+          return
+        }
+        if (blob.size > 3 * 1024 * 1024) {
+          setError('Image trop volumineuse même après compression. Réduisez la résolution de la photo.')
+          return
+        }
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = reader.result as string
+          analyze({ image: dataUrl.split(',')[1], mimeType: 'image/jpeg' })
+        }
+        reader.readAsDataURL(blob)
+      }, 'image/jpeg', 0.75)
+    }
+
+    img.src = objectUrl
   }
 
   function toggleVoice() {
@@ -481,6 +541,9 @@ export default function ImporterPage() {
             <FileText className="w-4 h-4 mr-2" />
             Importer un ticket
           </Button>
+          <p className="text-xs text-ink-4 text-center">
+            Cadrez uniquement le ticket, bien à plat, fond uni.
+          </p>
           <input
             ref={ticketRef}
             type="file"
