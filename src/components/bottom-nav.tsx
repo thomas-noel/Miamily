@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Package, ChefHat, ScanText, Users } from 'lucide-react'
+import { Home, Package, ChefHat, ScanText, ShoppingCart } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const items = [
@@ -10,7 +10,7 @@ const items = [
   { href: '/inventaire', icon: Package, label: 'Stock' },
   { href: '/importer', icon: ScanText, label: 'Importer' },
   { href: '/recettes', icon: ChefHat, label: 'Recettes' },
-  { href: '/preferences', icon: Users, label: 'Famille' },
+  { href: '/courses', icon: ShoppingCart, label: 'Courses' },
 ]
 
 export default function BottomNav() {

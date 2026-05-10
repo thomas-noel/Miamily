@@ -3,6 +3,8 @@ const WEAK_WORDS = new Set([
   'bio', 'frais', 'fraiche', 'surgele', 'surgelee',
   'naturel', 'naturelle', 'extra', 'premier', 'premiere',
   'origine', 'marque', 'lot', 'pack',
+  // qualificatifs de cuisson rapide — le produit reste le même ingrédient de base
+  'express', 'expres', 'precuit', 'rapide',
 ])
 
 function stripAccents(s: string): string {

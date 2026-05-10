@@ -177,17 +177,66 @@ function isPantryBasic(ingredientCanonical: string): boolean {
   return canonical.split(' ').some((w) => PANTRY_BASICS.has(w))
 }
 
+// ── Qualificatifs stricts ─────────────────────────────────────────────
+// Un produit transformé ne doit pas satisfaire une demande générique
+// Ex : "poulet pané" (stock) ≠ "poulet" (recette)
+const STRICT_QUALIFIERS = new Set([
+  'pane', 'fume', 'seche', 'marine', 'confit', 'grille',
+  'concasse', 'concentre', 'coulis', 'rape',
+  'feuillete', 'brise', 'cerise', 'cru',
+])
+
+function hasStrictQualifier(canonical: string): boolean {
+  return canonical.split(' ').some((w) => STRICT_QUALIFIERS.has(w))
+}
+
 // ── Matching ──────────────────────────────────────────────────────────
 function matchIngredient(ingredientCanonical: string, inventory: InventoryRow[]): boolean {
   const canonical = toCanonicalName(ingredientCanonical)
   return inventory.some((item) => {
-    if (item.canonical_name === canonical) return true
+    const itemCanonical = toCanonicalName(item.canonical_name)
+
+    // Règle 1 — correspondance exacte (prioritaire, insensible aux accents)
+    if (itemCanonical === canonical) return true
+
     const iWords = canonical.split(' ')
-    const invWords = item.canonical_name.split(' ')
-    if (iWords.length === 1 && invWords.includes(iWords[0])) return true
+    const invWords = itemCanonical.split(' ')
+
+    // Règle 2 — l'ingrédient recette est 1 mot, contenu dans les mots du stock
+    // Bloqué si le stock contient un qualificatif strict (ex: "pané", "fumé", "cerise")
+    if (iWords.length === 1 && invWords.includes(iWords[0]) && !hasStrictQualifier(itemCanonical)) return true
+
+    // Règle 3 — le stock est 1 mot, contenu dans les mots de l'ingrédient recette
     if (invWords.length === 1 && iWords.includes(invWords[0])) return true
+
     return false
   })
+}
+
+// ── Scoring ───────────────────────────────────────────────────────────
+// Racines structurantes (1 mot) : leur absence est rédhibitoire
+const STRUCTURING_WORDS = new Set([
+  'poulet', 'boeuf', 'porc', 'agneau', 'veau', 'dinde',
+  'saumon', 'thon', 'cabillaud', 'crevette', 'merlu',
+  'oeuf', 'tofu', 'seitan',
+  'lentille', 'haricot',
+  'pate', 'riz', 'semoule', 'quinoa', 'boulghour',
+  'tomate', 'courgette', 'aubergine', 'carotte', 'poireau',
+  'epinard', 'champignon', 'poivron', 'brocoli', 'chou',
+])
+
+// Racines multi-mots — vérifiées par inclusion exacte dans le canonical
+const STRUCTURING_PHRASES = ['pomme de terre', 'pois chiche']
+
+function isStructuring(canonical: string): boolean {
+  if (STRUCTURING_PHRASES.some((p) => canonical.includes(p))) return true
+  return canonical.split(' ').some((w) => STRUCTURING_WORDS.has(w))
+}
+
+function scoreRecipe(recipe: Recipe): number {
+  const missingStructuring = recipe.ingredients.filter((i) => !i.available && isStructuring(i.canonical_name)).length
+  const missingOther = recipe.ingredients.filter((i) => !i.available && !isStructuring(i.canonical_name)).length
+  return recipe.coverage_pct - missingStructuring * 35 - missingOther * 8 + (recipe.anti_gaspillage ? 10 : 0)
 }
 
 function isExpiringIngredient(canonical: string, expiringSet: Set<string>): boolean {
@@ -219,7 +268,7 @@ function buildInventoryText(items: InventoryRow[]): string {
 }
 
 const MODE_PROMPT: Record<RecipeMode, string> = {
-  normal: 'Équilibre goût/simplicité, pas de contrainte particulière.',
+  normal: 'Recettes familiales sans limite de temps : plats mijotés, gratins, tartes salées, risottos bienvenus. Peut demander plus de préparation.',
   rapide: '10 à 25 min, ≤5 étapes. JAMAIS four, mijoter, ou cuisson longue. Types imposés: omelette, poêlée, pâtes-express, wrap, sauté rapide. duration_minutes ≤25.',
   leger:  '<500 kcal par portion. JAMAIS pâtes en plat principal, crème fraîche, gratin, fromage fondu en grande quantité. Imposer: légumes, œufs, poisson, salade composée, soupe légère.',
 }
@@ -375,7 +424,7 @@ Mode: ${modeBlock}
 Contexte repas: ${mealContextBlock}
 ${stylesLine ? stylesLine + '\n' : ''}Éviter (déjà cuisiné): ${recentText} | Exclure: ${excludeText}
 ${prefsText ? '\n' + prefsText : ''}
-Génère 3 recettes JSON différentes, adaptées au contexte repas et au mode. Jusqu'à 3 ingrédients courants non listés acceptés. canonical_name=singulier minuscule.
+Génère 3 recettes JSON différentes, adaptées au contexte repas et au mode. Jusqu'à 3 ingrédients courants non listés acceptés. canonical_name=racine générique du composant en minuscules sans accent (ex: "poulet" non "poulet rôti", "riz" non "riz express") — sauf produit transformé qui est l'ingrédient réel de la recette (ex: "poulet pane", "saumon fume", "tomate concassee").
 
 {"recipes":[{"name":"...","duration_minutes":20,"persons":2,"steps":["..."],"ingredients":[{"name":"Courgettes","canonical_name":"courgette","quantity":2,"unit":"unité(s)"}]}]}`
 
@@ -446,12 +495,16 @@ Génère 3 recettes JSON différentes, adaptées au contexte repas et au mode. J
 
   // Post-filter: remove any recipe containing a free-text excluded ingredient
   const exclusionRoots = buildExclusionRoots(memberPrefs)
-  const finalRecipes = exclusionRoots.length > 0
+  const filteredRecipes = exclusionRoots.length > 0
     ? recipes.filter((r) => !recipeContainsExclusion(r, exclusionRoots))
     : recipes
   if (exclusionRoots.length > 0) {
-    console.log(`[recettes] post-filter: ${recipes.length}→${finalRecipes.length} recettes | exclusions: ${exclusionRoots.join(', ')}`)
+    console.log(`[recettes] post-filter: ${recipes.length}→${filteredRecipes.length} recettes | exclusions: ${exclusionRoots.join(', ')}`)
   }
+
+  // Tri par pertinence : coverage + malus structurants manquants + bonus anti-gaspi
+  const finalRecipes = [...filteredRecipes].sort((a, b) => scoreRecipe(b) - scoreRecipe(a))
+  console.log(`[recettes] scores: ${finalRecipes.map(r => `${r.name}(${scoreRecipe(r)})`).join(' / ')}`)
 
   await logUsage(supabase, user.id, 'recipe_generation')
   if (!noCache) setCached(key, finalRecipes)

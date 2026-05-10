@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Package, Check } from 'lucide-react'
+import { Package, Check, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { BetaChip } from '@/components/ui/beta-chip'
 import { daysUntilExpiry, getExpiryStatus } from '@/lib/expiry'
@@ -66,7 +66,12 @@ export default async function AccueilPage() {
       <div className="mb-6">
         <div className="flex items-start justify-between mb-1">
           <p className="text-sm text-ink-2">Bonjour, {firstName}</p>
-          <BetaChip />
+          <div className="flex items-center gap-2">
+            <Link href="/preferences" aria-label="Paramètres" className="text-ink-3 hover:text-foreground transition-colors">
+              <Settings className="w-4 h-4" />
+            </Link>
+            <BetaChip />
+          </div>
         </div>
         <h1 className="font-serif text-[32px] leading-[1.1] tracking-[-0.4px]">
           Que prépare-t-on ce soir ?

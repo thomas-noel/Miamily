@@ -45,14 +45,14 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
   const [savedId, setSavedId] = useState<string | null>(savedRecipeId ?? null)
   const [saving, setSaving] = useState(false)
   const [addingToCart, setAddingToCart] = useState(false)
-  const [cartToast, setCartToast] = useState<string | null>(null)
+  const [cartResult, setCartResult] = useState<{ added: number; skipped: number } | null>(null)
 
   useEffect(() => {
     setSavedId(savedRecipeId ?? null)
   }, [savedRecipeId])
 
   useEffect(() => {
-    setCartToast(null)
+    setCartResult(null)
     setAddingToCart(false)
   }, [recipe?.name])
 
@@ -185,22 +185,12 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
       )
     }
 
-    let msg: string
-    if (toInsert.length > 0 && skipped > 0) {
-      msg = `${toInsert.length} produit${toInsert.length > 1 ? 's' : ''} ajouté${toInsert.length > 1 ? 's' : ''} · ${skipped} déjà présent${skipped > 1 ? 's' : ''}`
-    } else if (toInsert.length > 0) {
-      msg = `${toInsert.length} produit${toInsert.length > 1 ? 's' : ''} ajouté${toInsert.length > 1 ? 's' : ''} aux courses`
-    } else {
-      msg = 'Déjà dans la liste'
-    }
-
-    setCartToast(msg)
+    setCartResult({ added: toInsert.length, skipped })
     setAddingToCart(false)
-    setTimeout(() => setCartToast(null), 4000)
   }
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setCooked(false); setCartToast(null) } }} disablePointerDismissal>
+    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setCooked(false); setCartResult(null) } }} disablePointerDismissal>
       <SheetContent
         side="bottom"
         className="w-full max-w-full rounded-t-2xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 bg-background"
@@ -346,29 +336,33 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
           </Button>
 
           {!cooked && missing.length > 0 && (
-            <Button
-              variant="outline"
-              className="w-full mt-2"
-              onClick={handleAddMissing}
-              disabled={addingToCart}
-            >
-              <ShoppingCart className="w-4 h-4" />
-              {addingToCart
-                ? 'Ajout…'
-                : `Ajouter les ${missing.length} manquant${missing.length > 1 ? 's' : ''} aux courses`}
-            </Button>
-          )}
-
-          {cartToast && (
-            <div className="flex items-center justify-between mt-2 px-0.5">
-              <p className="text-[11px] text-ink-3">{cartToast}</p>
-              <Link
-                href="/courses"
-                className="text-[11px] text-primary font-medium hover:underline underline-offset-2 ml-2 shrink-0"
+            cartResult === null ? (
+              <Button
+                variant="outline"
+                className="w-full mt-2"
+                onClick={handleAddMissing}
+                disabled={addingToCart}
               >
-                Voir la liste →
-              </Link>
-            </div>
+                <ShoppingCart className="w-4 h-4" />
+                {addingToCart
+                  ? 'Ajout…'
+                  : `Ajouter les ${missing.length} manquant${missing.length > 1 ? 's' : ''} aux courses`}
+              </Button>
+            ) : (
+              <div className="mt-2 rounded-xl border border-border bg-surface px-4 py-3">
+                <p className="text-sm text-foreground">
+                  {cartResult.added > 0
+                    ? `${cartResult.added} produit${cartResult.added > 1 ? 's' : ''} ajouté${cartResult.added > 1 ? 's' : ''} aux courses${cartResult.skipped > 0 ? ` · ${cartResult.skipped} déjà présent${cartResult.skipped > 1 ? 's' : ''}` : ''}`
+                    : 'Déjà dans votre liste de courses'}
+                </p>
+                <Link
+                  href="/courses"
+                  className="inline-flex items-center gap-1 text-sm text-primary font-medium mt-1.5 hover:underline underline-offset-2"
+                >
+                  Voir la liste de courses →
+                </Link>
+              </div>
+            )
           )}
 
           {!cooked && available.length > 0 && (
