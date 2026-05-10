@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronLeft, X, Check } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronLeft, X, Check, Heart } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { Recipe, RecipeMode, MealType } from '@/app/api/recettes/suggest/route'
+import type { Recipe, RecipeMode, MealMoment, MealType } from '@/app/api/recettes/suggest/route'
 import { Badge } from '@/components/ui/badge'
 import { BetaChip } from '@/components/ui/beta-chip'
 import { Button } from '@/components/ui/button'
@@ -32,17 +32,60 @@ type Props = {
   householdId: string
   personCount: number
   mealType?: MealType
+  mealMoment?: MealMoment
+  savedRecipeId?: string | null
+  onSaveChange?: (newId: string | null) => void
 }
 
-export default function RecipeSheet({ open, onOpenChange, recipe, mode, householdId, personCount, mealType }: Props) {
+export default function RecipeSheet({ open, onOpenChange, recipe, mode, householdId, personCount, mealType, mealMoment, savedRecipeId, onSaveChange }: Props) {
   const supabase = createClient()
   const [cooking, setCooking] = useState(false)
   const [cooked, setCooked] = useState(false)
+  const [savedId, setSavedId] = useState<string | null>(savedRecipeId ?? null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setSavedId(savedRecipeId ?? null)
+  }, [savedRecipeId])
 
   if (!recipe) return null
 
   const missing = recipe.ingredients.filter((i) => !i.available)
   const available = recipe.ingredients.filter((i) => i.available)
+
+  async function handleToggleSave() {
+    if (!recipe || saving) return
+    setSaving(true)
+    try {
+      if (savedId) {
+        await supabase.from('saved_recipes').delete().eq('id', savedId)
+        setSavedId(null)
+        onSaveChange?.(null)
+      } else {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { data } = await supabase
+          .from('saved_recipes')
+          .insert({
+            household_id: householdId,
+            created_by: user?.id ?? null,
+            name: recipe.name,
+            recipe_data: recipe,
+            mode,
+            meal_moment: mealMoment ?? null,
+            meal_type: mealType ?? null,
+            status: 'saved',
+          })
+          .select('id')
+          .single()
+        if (data) {
+          setSavedId(data.id)
+          onSaveChange?.(data.id)
+        }
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function decrementStock(r: Recipe, actualPersons: number) {
     const ratio = actualPersons / Math.max(1, r.persons)
@@ -122,7 +165,18 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
           >
             <ChevronLeft className="w-5 h-5 text-ink-3" />
           </button>
-          <div className="absolute top-3 right-4">
+          <div className="absolute top-3 right-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleSave}
+              disabled={saving}
+              className="rounded-full p-1.5 bg-background/80 backdrop-blur-sm hover:bg-background transition-colors"
+              aria-label={savedId ? 'Retirer des favoris' : 'Sauvegarder la recette'}
+            >
+              <Heart
+                className={`w-5 h-5 transition-colors ${savedId ? 'text-destructive fill-destructive' : 'text-ink-3'}`}
+              />
+            </button>
             <BetaChip />
           </div>
         </div>

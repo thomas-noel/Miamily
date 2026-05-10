@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, Clock, Users, Flame, Check, RefreshCw, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Users, Flame, Check, RefreshCw, Loader2, Heart } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, RecipeMode, MealMoment, MealType } from '@/app/api/recettes/suggest/route'
+import type { SavedRecipe } from '@/types/database'
 import RecipeSheet from '@/components/recipe-sheet'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils'
 
 type FoodMember = { id: string; name: string; is_child: boolean }
 type OptionSheet = 'moment' | 'mode' | 'personnes' | null
+type Tab = 'suggest' | 'mes-recettes'
 
 const MODES: { key: RecipeMode; label: string; description: string }[] = [
   { key: 'normal', label: 'Normal', description: 'Recettes équilibrées du quotidien' },
@@ -47,7 +49,7 @@ type Step = 'idle' | 'loading' | 'results' | 'error'
 function relativeTime(date: Date): string {
   const minutes = Math.floor((Date.now() - date.getTime()) / 60_000)
   if (minutes < 1) return "à l'instant"
-  if (minutes < 60) return `il y a ${minutes} min`
+  if (minutes < 60) return `il y a ${minutes} min`
   const hours = Math.floor(minutes / 60)
   return `il y a ${hours}h`
 }
@@ -56,6 +58,7 @@ export default function RecettesPage() {
   const router = useRouter()
   const supabase = createClient()
 
+  const [tab, setTab] = useState<Tab>('suggest')
   const [mode, setMode] = useState<RecipeMode>('normal')
   const [mealMoment, setMealMoment] = useState<MealMoment>(() => defaultMealMoment())
   const [mealType, setMealType] = useState<MealType>('sale')
@@ -72,6 +75,8 @@ export default function RecettesPage() {
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
   const [optionSheet, setOptionSheet] = useState<OptionSheet>(null)
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
+  const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>([])
+  const [currentSavedId, setCurrentSavedId] = useState<string | null>(null)
   const fetchingRef = useRef(false)
 
   useEffect(() => {
@@ -83,6 +88,8 @@ export default function RecettesPage() {
       if (!profile?.household_id) return
       const hid = profile.household_id as string
       setHouseholdId(hid)
+
+      // Restore sessionStorage cache (6h TTL)
       try {
         const raw = sessionStorage.getItem(`miamily_recipes_${hid}`)
         if (raw) {
@@ -106,6 +113,15 @@ export default function RecettesPage() {
           }
         }
       } catch {}
+
+      // Load saved recipes from Supabase
+      const { data: saved } = await supabase
+        .from('saved_recipes')
+        .select('id, name, recipe_data, mode, meal_moment, meal_type, status, created_at')
+        .eq('household_id', hid)
+        .order('created_at', { ascending: false })
+      setSavedRecipes((saved ?? []) as SavedRecipe[])
+
       const { data } = await supabase
         .from('food_members').select('id, name, is_child')
         .eq('household_id', profile.household_id).order('created_at')
@@ -121,9 +137,19 @@ export default function RecettesPage() {
     mode !== resultsMode || mealMoment !== resultsMoment || mealType !== resultsType
   )
 
+  async function refreshSaved() {
+    if (!householdId) return
+    const { data } = await supabase
+      .from('saved_recipes')
+      .select('id, name, recipe_data, mode, meal_moment, meal_type, status, created_at')
+      .eq('household_id', householdId)
+      .order('created_at', { ascending: false })
+    setSavedRecipes((data ?? []) as SavedRecipe[])
+  }
+
   function toggleMember(id: string) {
     setSelectedMemberIds((prev) => {
-      if (prev.includes(id) && prev.length === 1) return prev // empêche la dernière désélection
+      if (prev.includes(id) && prev.length === 1) return prev
       return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     })
   }
@@ -196,6 +222,14 @@ export default function RecettesPage() {
 
   function openRecipe(recipe: Recipe) {
     setSelectedRecipe(recipe)
+    // Match by name — provisional; recipes from sessionStorage don't have a DB id
+    setCurrentSavedId(savedRecipes.find(s => s.name === recipe.name)?.id ?? null)
+    setSheetOpen(true)
+  }
+
+  function openSavedRecipe(saved: SavedRecipe) {
+    setSelectedRecipe(saved.recipe_data as unknown as Recipe)
+    setCurrentSavedId(saved.id)
     setSheetOpen(true)
   }
 
@@ -206,7 +240,7 @@ export default function RecettesPage() {
   const currentMode = MODES.find((m) => m.key === mode)!
 
   return (
-    <div className="flex flex-col min-h-full overflow-x-hidden pb-44">
+    <div className={cn('flex flex-col min-h-full overflow-x-hidden', tab === 'suggest' ? 'pb-44' : 'pb-24')}>
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-10 pb-2">
@@ -222,129 +256,219 @@ export default function RecettesPage() {
       </div>
 
       {/* Titre */}
-      <div className="px-5 pt-2 pb-6">
-        <h1 className="font-serif text-[32px] leading-[1.1] tracking-[-0.4px] mb-2">
-          Suggérer 3 recettes
+      <div className="px-5 pt-2 pb-4">
+        <h1 className="font-serif text-[32px] leading-[1.1] tracking-[-0.4px]">
+          Recettes
         </h1>
-        <p className="text-sm text-ink-3">
-          On regarde votre stock et on vous propose 3 idées.
-        </p>
       </div>
 
-      {/* TYPE — grandes cartes */}
+      {/* Tab switcher */}
       <div className="px-5 mb-6">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Type</p>
-        <div className="grid grid-cols-2 gap-3">
-          {TYPES.map((t) => (
+        <div className="flex bg-surface-muted rounded-full p-1 gap-1">
+          {(['suggest', 'mes-recettes'] as const).map((key) => (
             <button
-              key={t.key}
+              key={key}
               type="button"
-              onClick={() => setMealType(t.key)}
-              disabled={step === 'loading'}
+              onClick={() => setTab(key)}
               className={cn(
-                'rounded-2xl border p-5 flex flex-col items-center gap-3 transition-colors',
-                mealType === t.key
-                  ? 'bg-primary-soft border-primary'
-                  : 'bg-surface border-border hover:border-primary/30'
+                'flex-1 rounded-full py-1.5 text-sm font-medium transition-colors',
+                tab === key ? 'bg-background shadow-sm text-foreground' : 'text-ink-3 hover:text-foreground'
               )}
             >
-              <span className="text-4xl leading-none">{t.emoji}</span>
-              <span className={cn(
-                'text-sm font-semibold',
-                mealType === t.key ? 'text-primary-ink' : 'text-foreground'
-              )}>
-                {t.label}
-              </span>
+              {key === 'suggest' ? 'Suggérer' : 'Mes recettes'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* OPTIONS */}
-      <div className="px-5 mb-6">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Options</p>
-        <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
-          <OptionRow
-            label="Moment"
-            value={currentMoment.label}
-            onClick={step !== 'loading' ? () => setOptionSheet('moment') : undefined}
-          />
-          <OptionRow
-            label="Personnes"
-            value={members.length > 0 ? `${personCount}` : '–'}
-            onClick={step !== 'loading' && members.length > 0 ? () => setOptionSheet('personnes') : undefined}
-          />
-          <OptionRow
-            label="Mode"
-            value={currentMode.label}
-            onClick={step !== 'loading' ? () => setOptionSheet('mode') : undefined}
-          />
-        </div>
-      </div>
-
-      {/* Erreur */}
-      {step === 'error' && error && (
-        <div className="mx-5 mb-5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-destructive break-words">
-          {error}
-        </div>
-      )}
-
-      {/* Skeleton */}
-      {step === 'loading' && (
-        <div className="px-5 space-y-3">
-          <p className="text-xs text-ink-3 text-center mb-2">Gemini analyse votre stock…</p>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="rounded-2xl border border-border p-4 space-y-3 animate-pulse">
-              <div className="flex items-start justify-between gap-2">
-                <div className="h-4 bg-surface-muted rounded w-3/5" />
-                <div className="h-4 bg-surface-muted rounded w-4" />
-              </div>
-              <div className="flex gap-3">
-                <div className="h-3 bg-surface-muted rounded w-14" />
-                <div className="h-3 bg-surface-muted rounded w-10" />
-                <div className="h-3 bg-surface-muted rounded w-10" />
-              </div>
-              <div className="flex gap-2">
-                <div className="h-5 bg-surface-muted rounded-full w-20" />
-                <div className="h-5 bg-surface-muted rounded-full w-28" />
-              </div>
+      {/* ── Onglet Suggérer ────────────────────────────────────────────── */}
+      {tab === 'suggest' && (
+        <>
+          {/* TYPE — grandes cartes */}
+          <div className="px-5 mb-6">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Type</p>
+            <div className="grid grid-cols-2 gap-3">
+              {TYPES.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setMealType(t.key)}
+                  disabled={step === 'loading'}
+                  className={cn(
+                    'rounded-2xl border p-5 flex flex-col items-center gap-3 transition-colors',
+                    mealType === t.key
+                      ? 'bg-primary-soft border-primary'
+                      : 'bg-surface border-border hover:border-primary/30'
+                  )}
+                >
+                  <span className="text-4xl leading-none">{t.emoji}</span>
+                  <span className={cn(
+                    'text-sm font-semibold',
+                    mealType === t.key ? 'text-primary-ink' : 'text-foreground'
+                  )}>
+                    {t.label}
+                  </span>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {/* Résultats */}
-      {step === 'results' && (
-        <div className="px-5 space-y-3">
-          {isStale && (
-            <div className="rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent-ink flex items-center gap-2">
-              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              Paramètres modifiés — mettez à jour les suggestions
+          {/* OPTIONS */}
+          <div className="px-5 mb-6">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">Options</p>
+            <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+              <OptionRow
+                label="Moment"
+                value={currentMoment.label}
+                onClick={step !== 'loading' ? () => setOptionSheet('moment') : undefined}
+              />
+              <OptionRow
+                label="Personnes"
+                value={members.length > 0 ? `${personCount}` : '–'}
+                onClick={step !== 'loading' && members.length > 0 ? () => setOptionSheet('personnes') : undefined}
+              />
+              <OptionRow
+                label="Mode"
+                value={currentMode.label}
+                onClick={step !== 'loading' ? () => setOptionSheet('mode') : undefined}
+              />
+            </div>
+          </div>
+
+          {/* Erreur */}
+          {step === 'error' && error && (
+            <div className="mx-5 mb-5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-destructive break-words">
+              {error}
             </div>
           )}
-          {resultsMode && (
-            <p className="text-xs text-ink-3">
-              Recettes en mode{' '}
-              <strong className="text-foreground">{MODES.find((m) => m.key === resultsMode)?.label}</strong>
-              {generatedAt && <> · {relativeTime(generatedAt)}</>}
+
+          {/* Skeleton */}
+          {step === 'loading' && (
+            <div className="px-5 space-y-3">
+              <p className="text-xs text-ink-3 text-center mb-2">Gemini analyse votre stock…</p>
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-2xl border border-border p-4 space-y-3 animate-pulse">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="h-4 bg-surface-muted rounded w-3/5" />
+                    <div className="h-4 bg-surface-muted rounded w-4" />
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="h-3 bg-surface-muted rounded w-14" />
+                    <div className="h-3 bg-surface-muted rounded w-10" />
+                    <div className="h-3 bg-surface-muted rounded w-10" />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="h-5 bg-surface-muted rounded-full w-20" />
+                    <div className="h-5 bg-surface-muted rounded-full w-28" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Résultats */}
+          {step === 'results' && (
+            <div className="px-5 space-y-3">
+              {isStale && (
+                <div className="rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent-ink flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                  Paramètres modifiés — mettez à jour les suggestions
+                </div>
+              )}
+              {resultsMode && (
+                <p className="text-xs text-ink-3">
+                  Recettes en mode{' '}
+                  <strong className="text-foreground">{MODES.find((m) => m.key === resultsMode)?.label}</strong>
+                  {generatedAt && <> · {relativeTime(generatedAt)}</>}
+                </p>
+              )}
+              {recipes.length === 0 && (
+                <EmptyState
+                  tone="warning"
+                  title="Aucune recette trouvée"
+                  subtitle="Votre stock actuel ne permet pas de générer des suggestions pour ces paramètres."
+                  inline
+                  cta={
+                    <Button variant="secondary" onClick={handleSuggest}>
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Réessayer
+                    </Button>
+                  }
+                />
+              )}
+              {recipes.map((recipe, i) => (
+                <RecipeCard key={i} recipe={recipe} onClick={() => openRecipe(recipe)} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Onglet Mes recettes ──────────────────────────────────────────── */}
+      {tab === 'mes-recettes' && (
+        <div className="px-5 space-y-6">
+
+          {/* Récentes — depuis sessionStorage (éphémère, 6h) */}
+          {recipes.length > 0 && (
+            <div>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">
+                Récentes{generatedAt ? ` · ${relativeTime(generatedAt)}` : ''}
+              </p>
+              <div className="space-y-2">
+                {recipes.map((recipe, i) => (
+                  <SavedRecipeRow
+                    key={i}
+                    name={recipe.name}
+                    durationMinutes={recipe.duration_minutes}
+                    persons={recipe.persons}
+                    isSaved={!!savedRecipes.find(s => s.name === recipe.name)}
+                    onClick={() => openRecipe(recipe)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sauvegardées — depuis Supabase */}
+          <div>
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">
+              Sauvegardées · {savedRecipes.length}
             </p>
-          )}
-          {recipes.length === 0 && (
+            {savedRecipes.length === 0 ? (
+              <EmptyState
+                title="Aucune recette sauvegardée"
+                subtitle="Ouvrez une recette et appuyez sur ♡ pour la retrouver ici."
+                inline
+              />
+            ) : (
+              <div className="space-y-2">
+                {savedRecipes.map((saved) => (
+                  <SavedRecipeRow
+                    key={saved.id}
+                    name={saved.name}
+                    durationMinutes={(saved.recipe_data as { duration_minutes?: number }).duration_minutes}
+                    persons={(saved.recipe_data as { persons?: number }).persons}
+                    isSaved
+                    onClick={() => openSavedRecipe(saved)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* État vide global — aucune récente ET aucune sauvegardée */}
+          {recipes.length === 0 && savedRecipes.length === 0 && (
             <EmptyState
-              tone="warning"
-              title="Aucune recette trouvée"
-              subtitle="Votre stock actuel ne permet pas de générer des suggestions pour ces paramètres."
+              title="Pas encore de recettes"
+              subtitle="Générez des suggestions dans l'onglet Suggérer et sauvegardez vos préférées."
               inline
               cta={
-                <Button variant="secondary" onClick={handleSuggest}>
-                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Réessayer
+                <Button variant="secondary" onClick={() => setTab('suggest')}>
+                  Suggérer des recettes
                 </Button>
               }
             />
           )}
-          {recipes.map((recipe, i) => (
-            <RecipeCard key={i} recipe={recipe} onClick={() => openRecipe(recipe)} />
-          ))}
+
         </div>
       )}
 
@@ -356,6 +480,9 @@ export default function RecettesPage() {
         householdId={householdId}
         personCount={personCount}
         mealType={resultsType ?? mealType}
+        mealMoment={resultsMoment ?? mealMoment}
+        savedRecipeId={currentSavedId}
+        onSaveChange={(newId) => { setCurrentSavedId(newId); refreshSaved() }}
       />
 
       {/* ── Sheets d'options ────────────────────────────────────────────── */}
@@ -470,26 +597,28 @@ export default function RecettesPage() {
         </SheetContent>
       </Sheet>
 
-      {/* CTA sticky — au-dessus de la bottom nav + safe-area iOS */}
-      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 bg-background/95 backdrop-blur-sm border-t border-border px-5 py-3">
-        {step === 'loading' ? (
-          <Button variant="dark" className="w-full" disabled>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…
-          </Button>
-        ) : isStale ? (
-          <Button variant="dark" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
-            <RefreshCw className="w-4 h-4 mr-2" />Mettre à jour les suggestions
-          </Button>
-        ) : step === 'results' ? (
-          <Button variant="secondary" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
-            <RefreshCw className="w-4 h-4 mr-2" />Relancer
-          </Button>
-        ) : (
-          <Button variant="dark" className="w-full" onClick={handleSuggest}>
-            Suggérer 3 recettes
-          </Button>
-        )}
-      </div>
+      {/* CTA sticky — uniquement pour l'onglet Suggérer */}
+      {tab === 'suggest' && (
+        <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 bg-background/95 backdrop-blur-sm border-t border-border px-5 py-3">
+          {step === 'loading' ? (
+            <Button variant="dark" className="w-full" disabled>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyse en cours…
+            </Button>
+          ) : isStale ? (
+            <Button variant="dark" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
+              <RefreshCw className="w-4 h-4 mr-2" />Mettre à jour les suggestions
+            </Button>
+          ) : step === 'results' ? (
+            <Button variant="secondary" className="w-full" onClick={handleSuggest} disabled={fetchingRef.current}>
+              <RefreshCw className="w-4 h-4 mr-2" />Relancer
+            </Button>
+          ) : (
+            <Button variant="dark" className="w-full" onClick={handleSuggest}>
+              Suggérer 3 recettes
+            </Button>
+          )}
+        </div>
+      )}
 
     </div>
   )
@@ -564,6 +693,37 @@ function RecipeCard({ recipe, onClick }: { recipe: Recipe; onClick: () => void }
           <Badge variant="success">Tout disponible ✓</Badge>
         )}
       </div>
+    </button>
+  )
+}
+
+// ── SavedRecipeRow ─────────────────────────────────────────────────────────
+
+function SavedRecipeRow({
+  name, durationMinutes, persons, isSaved = false, onClick,
+}: {
+  name: string
+  durationMinutes?: number
+  persons?: number
+  isSaved?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-3 bg-surface border border-border rounded-xl px-4 py-3 text-left hover:border-primary/30 transition-colors"
+    >
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{name}</p>
+        <p className="text-xs text-ink-3">
+          {durationMinutes != null ? `${durationMinutes} min` : ''}
+          {durationMinutes != null && persons != null ? ' · ' : ''}
+          {persons != null ? `${persons} pers.` : ''}
+        </p>
+      </div>
+      {isSaved && <Heart className="w-4 h-4 shrink-0 text-destructive fill-destructive" />}
+      <ChevronRight className="w-4 h-4 shrink-0 text-ink-3" />
     </button>
   )
 }

@@ -32,6 +32,20 @@ export type ProductCategory = {
 
 export type StorageLocation = 'fridge' | 'pantry' | 'freezer'
 
+export type SavedRecipe = {
+  id: string
+  household_id: string
+  created_by: string | null
+  name: string
+  recipe_data: Record<string, unknown>
+  mode: string | null
+  meal_moment: string | null
+  meal_type: string | null
+  status: 'saved' | 'planned' | 'cooked'
+  cooked_at: string | null
+  created_at: string
+}
+
 export type InventoryItem = {
   id: string
   household_id: string
