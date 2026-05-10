@@ -12,15 +12,15 @@ interface EmptyStateProps {
 }
 
 const toneStyles = {
-  neutral: "text-muted-foreground",
+  neutral: "text-ink-3",
   success: "text-primary-ink",
   warning: "text-accent-ink",
 }
 
 const iconToneStyles = {
-  neutral: "bg-muted text-muted-foreground",
+  neutral: "bg-surface-muted text-ink-3",
   success: "bg-primary-soft text-primary",
-  warning: "bg-accent-soft text-accent-amber",
+  warning: "bg-accent-soft text-accent-ink",
 }
 
 export function EmptyState({
@@ -55,7 +55,7 @@ export function EmptyState({
           {title}
         </p>
         {subtitle && (
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
+          <p className="text-sm text-ink-3">{subtitle}</p>
         )}
       </div>
       {cta && <div className="mt-1">{cta}</div>}

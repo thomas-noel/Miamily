@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Package } from 'lucide-react'
+import { Package, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { BetaChip } from '@/components/ui/beta-chip'
 import { daysUntilExpiry, getExpiryStatus } from '@/lib/expiry'
@@ -136,6 +136,19 @@ export default async function AccueilPage() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Tout sous contrôle — quand stock > 0 mais rien d'urgent */}
+      {urgent === 0 && stock > 0 && (
+        <div className="mb-6 rounded-2xl border border-border bg-surface px-5 py-4 flex items-center gap-4">
+          <div className="size-10 rounded-full bg-primary-soft flex items-center justify-center shrink-0">
+            <Check className="w-5 h-5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">Tout est sous contrôle</p>
+            <p className="text-xs text-ink-3 mt-0.5">Aucun produit à utiliser d'urgence.</p>
           </div>
         </div>
       )}

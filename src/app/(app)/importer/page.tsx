@@ -274,7 +274,7 @@ export default function ImporterPage() {
             <p className="text-sm font-semibold text-foreground">
               {isTicket ? 'Analyse du ticket en cours…' : 'Analyse de votre liste…'}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-ink-3">
               {isTicket
                 ? 'Nous détectons les produits lisibles.'
                 : 'Identification des produits en cours…'}
@@ -301,7 +301,7 @@ export default function ImporterPage() {
           <button
             type="button"
             onClick={() => router.push('/inventaire')}
-            className="rounded-full p-2 hover:bg-muted transition-colors"
+            className="rounded-full p-2 hover:bg-surface-muted transition-colors"
             aria-label="Aller au stock"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -342,7 +342,7 @@ export default function ImporterPage() {
             type="button"
             onClick={resetInput}
             disabled={step === 'confirming'}
-            className="rounded-full p-2 hover:bg-muted transition-colors disabled:opacity-40"
+            className="rounded-full p-2 hover:bg-surface-muted transition-colors disabled:opacity-40"
             aria-label="Retour"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -353,7 +353,7 @@ export default function ImporterPage() {
 
         {/* Scrollable content — pb-48 clears sticky CTA + nav */}
         <div className="px-4 space-y-5 pb-48">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-ink-3">
             {items.length} produit{items.length > 1 ? 's' : ''} détecté{items.length > 1 ? 's' : ''}.{' '}
             Modifiez ou supprimez avant de confirmer.
           </p>
@@ -366,7 +366,7 @@ export default function ImporterPage() {
 
           {confirmed.length > 0 && (
             <div className="space-y-2">
-              <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-muted-foreground">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[1.4px] text-ink-3">
                 Confirmés · {confirmed.length}
               </p>
               {confirmed.map((item) => {
@@ -439,7 +439,7 @@ export default function ImporterPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="rounded-full p-2 hover:bg-muted transition-colors"
+          className="rounded-full p-2 hover:bg-surface-muted transition-colors"
           aria-label="Retour"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -542,7 +542,7 @@ export default function ImporterPage() {
               className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm transition-colors ${
                 listening
                   ? 'border-destructive bg-danger-soft text-destructive'
-                  : 'border-border bg-surface text-ink-3 hover:text-foreground hover:bg-muted'
+                  : 'border-border bg-surface text-ink-3 hover:text-foreground hover:bg-surface-muted'
               }`}
             >
               {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -619,14 +619,14 @@ function CompactItemRow({ item, onUpdate, onRemove, disabled, uncertain = false 
           placeholder="Nom du produit"
           disabled={disabled}
         />
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+        <span className="shrink-0 text-xs text-ink-3 tabular-nums whitespace-nowrap">
           ~{expiryLabel(item.estimated_expiry_days)}
         </span>
         <button
           type="button"
           onClick={onRemove}
           disabled={disabled}
-          className="shrink-0 rounded p-1 hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+          className="shrink-0 rounded p-1 hover:bg-surface-muted text-ink-3 hover:text-destructive transition-colors"
           aria-label="Supprimer"
         >
           <Trash2 className="w-4 h-4" />
@@ -669,7 +669,7 @@ function CompactItemRow({ item, onUpdate, onRemove, disabled, uncertain = false 
               className={`size-8 rounded-lg border text-sm flex items-center justify-center transition-colors ${
                 item.storage_location === loc
                   ? 'border-primary bg-primary-soft'
-                  : 'border-border text-muted-foreground hover:border-primary/50'
+                  : 'border-border text-ink-3 hover:border-primary/50'
               }`}
             >
               {STORAGE_EMOJI[loc]}

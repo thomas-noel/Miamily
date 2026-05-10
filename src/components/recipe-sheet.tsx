@@ -1,15 +1,27 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Check, Clock, Users, Flame } from 'lucide-react'
+import { ChevronLeft, X, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { Recipe, RecipeMode } from '@/app/api/recettes/suggest/route'
+import type { Recipe, RecipeMode, MealType } from '@/app/api/recettes/suggest/route'
+import { Badge } from '@/components/ui/badge'
+import { BetaChip } from '@/components/ui/beta-chip'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 
 const HEAVINESS: Record<RecipeMode, 'light' | 'normal' | 'heavy'> = {
   leger: 'light', normal: 'normal', rapide: 'normal',
+}
+
+const MODE_LABEL: Record<RecipeMode, string> = {
+  normal: 'normal',
+  rapide: 'rapide',
+  leger: 'léger',
+}
+
+const MEAL_TYPE_LABEL: Record<MealType, string> = {
+  sale: 'Salé',
+  sucre: 'Sucré',
 }
 
 type Props = {
@@ -19,9 +31,10 @@ type Props = {
   mode: RecipeMode
   householdId: string
   personCount: number
+  mealType?: MealType
 }
 
-export default function RecipeSheet({ open, onOpenChange, recipe, mode, householdId, personCount }: Props) {
+export default function RecipeSheet({ open, onOpenChange, recipe, mode, householdId, personCount, mealType }: Props) {
   const supabase = createClient()
   const [cooking, setCooking] = useState(false)
   const [cooked, setCooked] = useState(false)
@@ -89,68 +102,96 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
     <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setCooked(false) }} disablePointerDismissal>
       <SheetContent
         side="bottom"
-        className="w-full max-w-full rounded-t-2xl max-h-[92vh] overflow-y-auto overflow-x-hidden"
+        className="w-full max-w-full rounded-t-2xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 bg-background"
         showCloseButton={false}
       >
-        {/* En-tête — SheetHeader a p-4 en base, on surcharge px-0 et on gère l'horizontal dans le wrapper */}
-        <SheetHeader className="px-4 pb-0">
-          <div className="flex items-start justify-between gap-3 min-w-0 overflow-hidden">
-            <SheetTitle className="text-left leading-snug min-w-0 break-words [overflow-wrap:anywhere]">
-              {recipe.name}
-            </SheetTitle>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="shrink-0 rounded-full p-1 hover:bg-muted transition-colors mt-0.5"
-              aria-label="Fermer"
-            >
-              <X className="w-5 h-5 text-muted-foreground" />
-            </button>
-          </div>
-        </SheetHeader>
 
-        {/* Corps — conteneur avec padding horizontal uniforme */}
-        <div className="px-4 pb-6 space-y-4 min-w-0 w-full overflow-x-hidden">
+        {/* ── Hero — motif diagonal CSS, compatible sans photo ── */}
+        <div
+          className="relative h-36 bg-surface-muted overflow-hidden rounded-t-2xl shrink-0"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(0,0,0,0.045) 8px, rgba(0,0,0,0.045) 9px)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="absolute top-3 left-3 rounded-full p-1.5 bg-background/80 backdrop-blur-sm hover:bg-background transition-colors"
+            aria-label="Fermer"
+          >
+            <ChevronLeft className="w-5 h-5 text-ink-3" />
+          </button>
+          <div className="absolute top-3 right-4">
+            <BetaChip />
+          </div>
+        </div>
+
+        {/* ── Contenu scrollable (pb-32 pour dégager le CTA sticky) ── */}
+        <div className="px-5 pt-4 pb-32">
+
+          {/* Badges */}
+          {(recipe.anti_gaspillage || mealType) && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {recipe.anti_gaspillage && (
+                <Badge variant="success">
+                  <Check className="w-3 h-3 mr-1" />Anti-gaspi
+                </Badge>
+              )}
+              {mealType && (
+                <Badge variant="neutral">{MEAL_TYPE_LABEL[mealType]}</Badge>
+              )}
+            </div>
+          )}
+
+          {/* Titre serif */}
+          <h2 className="font-serif text-[28px] leading-[1.1] tracking-[-0.3px] break-words [overflow-wrap:anywhere]">
+            {recipe.name}
+          </h2>
+
           {/* Méta */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1 shrink-0">
-              <Clock className="w-4 h-4" />{recipe.duration_minutes} min
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
-              <Users className="w-4 h-4" />{recipe.persons} pers.
-            </span>
-            <span className="flex items-center gap-1 shrink-0 font-medium text-green-700">
-              <Check className="w-4 h-4" />{recipe.coverage_pct}% dispo
-            </span>
-            {recipe.anti_gaspillage && (
-              <span className="flex items-center gap-1 shrink-0 text-amber-700 font-medium">
-                <Flame className="w-4 h-4" />Anti-gaspi
-              </span>
-            )}
-          </div>
+          <p className="text-sm text-ink-3 mt-1.5">
+            {recipe.duration_minutes} min · {recipe.persons} pers. · {MODE_LABEL[mode]}
+          </p>
 
-          <Separator />
+          {/* Stats row — données réelles seulement */}
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="rounded-xl border border-border bg-surface px-4 py-3">
+              <p className="text-lg font-semibold text-foreground leading-none">
+                {available.length}
+                <span className="text-sm font-normal text-ink-3">/{recipe.ingredients.length}</span>
+              </p>
+              <p className="text-xs text-ink-3 mt-1">ingrédients dispo</p>
+            </div>
+            <div className="rounded-xl border border-border bg-surface px-4 py-3">
+              <p className="text-lg font-semibold text-foreground leading-none">
+                {recipe.coverage_pct}
+                <span className="text-sm font-normal text-ink-3">%</span>
+              </p>
+              <p className="text-xs text-ink-3 mt-1">en stock</p>
+            </div>
+          </div>
 
           {/* Ingrédients */}
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+          <div className="mt-5">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">
               Ingrédients
             </p>
-            <div className="space-y-1.5 min-w-0">
+            <div className="space-y-2.5">
               {available.map((ing, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm min-w-0">
-                  <Check className="w-4 h-4 shrink-0 text-green-600" />
-                  <span className="font-medium truncate min-w-0 flex-1">{ing.name}</span>
-                  <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <Check className="w-4 h-4 shrink-0 text-primary" />
+                  <span className="font-medium flex-1 truncate">{ing.name}</span>
+                  <span className="text-ink-3 shrink-0 tabular-nums text-xs">
                     {ing.quantity} {ing.unit}
                   </span>
                 </div>
               ))}
               {missing.map((ing, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm min-w-0">
-                  <X className="w-4 h-4 shrink-0 text-red-400" />
-                  <span className="text-muted-foreground truncate min-w-0 flex-1">{ing.name}</span>
-                  <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+                <div key={i} className="flex items-center gap-2 text-sm opacity-50">
+                  <X className="w-4 h-4 shrink-0 text-destructive" />
+                  <span className="flex-1 truncate">{ing.name}</span>
+                  <span className="text-ink-3 shrink-0 tabular-nums text-xs">
                     {ing.quantity} {ing.unit}
                   </span>
                 </div>
@@ -158,33 +199,46 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
             </div>
           </div>
 
-          <Separator />
-
           {/* Étapes */}
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-              Étapes
-            </p>
-            <ol className="space-y-3 min-w-0">
-              {recipe.steps.map((step, i) => (
-                <li key={i} className="flex gap-3 text-sm min-w-0 overflow-hidden">
-                  <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">{step}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
+          {recipe.steps.length > 0 && (
+            <div className="mt-5">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-ink-3 mb-3">
+                Étapes
+              </p>
+              <ol className="space-y-4">
+                {recipe.steps.map((step, i) => (
+                  <li key={i} className="flex gap-3 text-sm">
+                    <span className="shrink-0 w-6 h-6 rounded-full bg-primary-soft text-primary-ink text-xs font-bold flex items-center justify-center mt-0.5">
+                      {i + 1}
+                    </span>
+                    <span className="flex-1 break-words [overflow-wrap:anywhere] leading-relaxed text-foreground">
+                      {step}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
+        </div>
+
+        {/* ── CTA sticky — collé au bas de la zone de scroll ── */}
+        <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t border-border px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <Button
+            variant="dark"
             className="w-full"
             onClick={handleCook}
             disabled={cooking || cooked}
           >
-            {cooked ? '✓ Bon appétit !' : cooking ? 'Enregistrement…' : 'Cuisiner ce repas 🍽️'}
+            {cooked ? '✓ Bon appétit !' : cooking ? 'Enregistrement…' : 'Cuisiner ce repas'}
           </Button>
+          {!cooked && available.length > 0 && (
+            <p className="text-[11px] text-ink-3 text-center mt-2">
+              Les ingrédients utilisés seront retirés du stock.
+            </p>
+          )}
         </div>
+
       </SheetContent>
     </Sheet>
   )

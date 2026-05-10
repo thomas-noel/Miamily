@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Recipe, RecipeMode, MealMoment, MealType } from '@/app/api/recettes/suggest/route'
 import RecipeSheet from '@/components/recipe-sheet'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { BetaChip } from '@/components/ui/beta-chip'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -43,6 +44,14 @@ function defaultMealMoment(): MealMoment {
 
 type Step = 'idle' | 'loading' | 'results' | 'error'
 
+function relativeTime(date: Date): string {
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000)
+  if (minutes < 1) return "à l'instant"
+  if (minutes < 60) return `il y a ${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  return `il y a ${hours}h`
+}
+
 export default function RecettesPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -62,6 +71,7 @@ export default function RecettesPage() {
   const [members, setMembers] = useState<FoodMember[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([])
   const [optionSheet, setOptionSheet] = useState<OptionSheet>(null)
+  const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const fetchingRef = useRef(false)
 
   useEffect(() => {
@@ -71,7 +81,31 @@ export default function RecettesPage() {
       const { data: profile } = await supabase
         .from('profiles').select('household_id').eq('id', user.id).single()
       if (!profile?.household_id) return
-      setHouseholdId(profile.household_id as string)
+      const hid = profile.household_id as string
+      setHouseholdId(hid)
+      try {
+        const raw = sessionStorage.getItem(`miamily_recipes_${hid}`)
+        if (raw) {
+          const cached = JSON.parse(raw) as {
+            recipes: Recipe[]; mode: RecipeMode; mealMoment: MealMoment
+            mealType: MealType; generatedAt: string
+          }
+          const age = Date.now() - new Date(cached.generatedAt).getTime()
+          if (age < 6 * 60 * 60 * 1000) {
+            setRecipes(cached.recipes)
+            setMode(cached.mode)
+            setMealMoment(cached.mealMoment)
+            setMealType(cached.mealType)
+            setResultsMode(cached.mode)
+            setResultsMoment(cached.mealMoment)
+            setResultsType(cached.mealType)
+            setGeneratedAt(new Date(cached.generatedAt))
+            setStep('results')
+          } else {
+            sessionStorage.removeItem(`miamily_recipes_${hid}`)
+          }
+        }
+      } catch {}
       const { data } = await supabase
         .from('food_members').select('id, name, is_child')
         .eq('household_id', profile.household_id).order('created_at')
@@ -143,7 +177,18 @@ export default function RecettesPage() {
       setResultsMode(mode)
       setResultsMoment(mealMoment)
       setResultsType(mealType)
+      const now = new Date()
+      setGeneratedAt(now)
       setStep('results')
+      try {
+        sessionStorage.setItem(`miamily_recipes_${hid}`, JSON.stringify({
+          recipes: data.recipes ?? [],
+          mode,
+          mealMoment,
+          mealType,
+          generatedAt: now.toISOString(),
+        }))
+      } catch {}
     } finally {
       fetchingRef.current = false
     }
@@ -239,7 +284,7 @@ export default function RecettesPage() {
 
       {/* Erreur */}
       {step === 'error' && error && (
-        <div className="mx-5 mb-5 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive break-words">
+        <div className="mx-5 mb-5 rounded-xl bg-danger-soft px-4 py-3 text-sm text-destructive break-words">
           {error}
         </div>
       )}
@@ -281,12 +326,21 @@ export default function RecettesPage() {
             <p className="text-xs text-ink-3">
               Recettes en mode{' '}
               <strong className="text-foreground">{MODES.find((m) => m.key === resultsMode)?.label}</strong>
+              {generatedAt && <> · {relativeTime(generatedAt)}</>}
             </p>
           )}
           {recipes.length === 0 && (
-            <p className="text-center text-ink-3 py-8">
-              Aucune recette trouvée avec votre stock actuel.
-            </p>
+            <EmptyState
+              tone="warning"
+              title="Aucune recette trouvée"
+              subtitle="Votre stock actuel ne permet pas de générer des suggestions pour ces paramètres."
+              inline
+              cta={
+                <Button variant="secondary" onClick={handleSuggest}>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Réessayer
+                </Button>
+              }
+            />
           )}
           {recipes.map((recipe, i) => (
             <RecipeCard key={i} recipe={recipe} onClick={() => openRecipe(recipe)} />
@@ -301,6 +355,7 @@ export default function RecettesPage() {
         mode={resultsMode ?? mode}
         householdId={householdId}
         personCount={personCount}
+        mealType={resultsType ?? mealType}
       />
 
       {/* ── Sheets d'options ────────────────────────────────────────────── */}

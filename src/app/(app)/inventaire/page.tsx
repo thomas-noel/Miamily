@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, X } from 'lucide-react'
+import { Plus, Search, X, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { InventoryItem, ProductCategory, StorageLocation } from '@/types/database'
 import { getExpiryStatus } from '@/lib/expiry'
@@ -9,6 +9,7 @@ import ExpiryBadge from '@/components/expiry-badge'
 import InventoryItemSheet from '@/components/inventory-item-sheet'
 import { BetaChip } from '@/components/ui/beta-chip'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 
 type Filter = 'all' | StorageLocation
 
@@ -186,13 +187,16 @@ export default function InventairePage() {
         )}
 
         {stockIsEmpty && (
-          <div className="py-16 flex flex-col items-center gap-2 text-center">
-            <p className="font-medium text-foreground">Votre stock est vide.</p>
-            <p className="text-sm text-ink-3">Ajoutez vos premiers produits pour démarrer.</p>
-            <Button onClick={openAdd} className="mt-3">
-              <Plus className="w-4 h-4 mr-1" />Ajouter un produit
-            </Button>
-          </div>
+          <EmptyState
+            icon={<Package className="w-5 h-5" />}
+            title="Votre stock est vide"
+            subtitle="Ajoutez vos premiers produits pour démarrer."
+            cta={
+              <Button onClick={openAdd}>
+                <Plus className="w-4 h-4 mr-1" />Ajouter un produit
+              </Button>
+            }
+          />
         )}
 
         {searchEmpty && (
