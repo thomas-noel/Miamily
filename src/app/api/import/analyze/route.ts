@@ -47,18 +47,26 @@ Retourne UNIQUEMENT un JSON valide de la forme :
 
 Ne retourne rien d'autre que ce JSON.`
 
-// Prompt for PHOTO input: Gemini extracts everything from the image
-const PHOTO_PROMPT = `Tu es un assistant qui extrait une liste de produits alimentaires à partir d'une image (photo de frigo, placard, courses, ou ticket de caisse).
+// Prompt for PHOTO input: frigo, placard, or receipt — multilingual support
+const PHOTO_PROMPT = `Tu es un assistant qui extrait une liste de produits alimentaires à partir d'une image.
 
-Pour chaque produit visible, retourne :
-- name: string — nom d'affichage propre en français, singulier, sans marque
-- canonical_name: string — nom racine singulier strict, en minuscules, sans adjectif (ex: "courgette", "lait", "yaourt")
+L'image peut être : une photo de frigo, un placard, des courses posées, ou un ticket de caisse (reçu de supermarché).
+
+Si c'est un ticket de caisse :
+- IGNORE complètement : prix unitaires, montants, remises, promotions, total, sous-total, TVA, codes-barres, références produits, numéros de ticket, moyens de paiement, informations carte bancaire, adresse du magasin, horaires, mentions légales.
+- Le ticket peut être en français, espagnol, anglais ou toute autre langue européenne — traduis les noms d'affichage en français.
+- Extrait uniquement les lignes correspondant à des produits alimentaires.
+- La quantité est le nombre d'articles achetés. Si non précisé, utilise 1.
+
+Pour chaque produit alimentaire détecté, retourne :
+- name: string — nom d'affichage propre en français, singulier, sans marque (ex: "Lait demi-écrémé", "Tomates cerises")
+- canonical_name: string — nom racine singulier strict, en minuscules, sans adjectif ni marque (ex: "lait", "tomate", "yaourt")
 - quantity: number — quantité estimée visible ; si impossible à déterminer, utilise 1
 - unit: string — parmi : "g", "kg", "ml", "cl", "l", "unité(s)", "tranche(s)", "portion(s)", "boîte(s)", "sachet(s)", "bouteille(s)"
 - storage_location: "fridge" | "pantry" | "freezer"
 - estimated_expiry_days: number
 
-Liste tous les produits visibles, même partiellement. Ne cherche pas la perfection sur les quantités.
+Liste tous les produits alimentaires détectables, même partiellement visibles. Ne cherche pas la perfection sur les quantités.
 
 Retourne UNIQUEMENT un JSON valide de la forme :
 { "items": [ { "name": "Courgette", "canonical_name": "courgette", "quantity": 1, "unit": "unité(s)", "storage_location": "fridge", "estimated_expiry_days": 7 }, ... ] }
@@ -121,30 +129,42 @@ export async function POST(request: NextRequest) {
     generationConfig: { responseMimeType: 'application/json' },
   })
 
+  // Build the Gemini promise before the race, to keep the try/catch clean
+  let geminiCall: ReturnType<typeof model.generateContent>
+  if (image) {
+    const mediaPrompt = mimeType === 'application/pdf' ? PDF_PROMPT : PHOTO_PROMPT
+    geminiCall = model.generateContent([
+      mediaPrompt + locationNote,
+      { inlineData: { mimeType, data: image } },
+    ])
+  } else {
+    const parsed = parseProductList(rawText)
+    if (parsed.length === 0) {
+      return Response.json({ error: 'Aucun produit détecté dans le texte.' }, { status: 400 })
+    }
+    const inputJson = JSON.stringify(parsed.map((p) => ({
+      rawName: p.rawName,
+      quantity: p.quantity,
+      unit: p.unit,
+    })))
+    geminiCall = model.generateContent([ENRICH_PROMPT + locationNote, inputJson])
+  }
+
   let result
   try {
-    if (image) {
-      // Photo or PDF: full extraction by Gemini (choose prompt based on mimeType)
-      const mediaPrompt = mimeType === 'application/pdf' ? PDF_PROMPT : PHOTO_PROMPT
-      result = await model.generateContent([
-        mediaPrompt + locationNote,
-        { inlineData: { mimeType, data: image } },
-      ])
-    } else {
-      // Text: pre-parse quantities, then enrich with Gemini
-      const parsed = parseProductList(rawText)
-      if (parsed.length === 0) {
-        return Response.json({ error: 'Aucun produit détecté dans le texte.' }, { status: 400 })
-      }
-      const inputJson = JSON.stringify(parsed.map((p) => ({
-        rawName: p.rawName,
-        quantity: p.quantity,
-        unit: p.unit,
-      })))
-      result = await model.generateContent([ENRICH_PROMPT + locationNote, inputJson])
-    }
+    result = await Promise.race([
+      geminiCall,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), 40_000)
+      ),
+    ])
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    if (msg === 'GEMINI_TIMEOUT') {
+      return Response.json({
+        error: "L'analyse du ticket a pris trop de temps. Essayez une photo plus nette ou ajoutez vos produits sous forme de liste.",
+      }, { status: 504 })
+    }
     const isQuota = msg.includes('429') || msg.includes('quota')
     return Response.json({
       error: isQuota

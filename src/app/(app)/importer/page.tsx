@@ -72,18 +72,48 @@ export default function ImporterPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const inputSourceRef = useRef<InputSource>('text')
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const timeoutAbortedRef = useRef(false)
 
   // ── Business logic (unchanged) ─────────────────────────────────────────────
 
   async function analyze(payload: { text?: string; image?: string; mimeType?: string }) {
     setStep('loading')
     setError(null)
+    timeoutAbortedRef.current = false
 
-    const res = await fetch('/api/import/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, locationHint }),
-    })
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+    const timeoutId = setTimeout(() => {
+      timeoutAbortedRef.current = true
+      controller.abort()
+    }, 45_000)
+
+    let res: Response
+    try {
+      res = await fetch('/api/import/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, locationHint }),
+        signal: controller.signal,
+      })
+    } catch (e) {
+      clearTimeout(timeoutId)
+      abortControllerRef.current = null
+      if (e instanceof Error && e.name === 'AbortError') {
+        if (timeoutAbortedRef.current) {
+          setError("L'analyse du ticket a pris trop de temps. Essayez une photo plus nette ou ajoutez vos produits sous forme de liste.")
+        }
+        // Annulation utilisateur : retour silencieux à l'écran de saisie
+      } else {
+        setError('Erreur réseau. Vérifiez votre connexion.')
+      }
+      setStep('input')
+      return
+    }
+
+    clearTimeout(timeoutId)
+    abortControllerRef.current = null
 
     let data: { error?: string; importId?: string; items?: Item[] }
     try { data = await res.json() }
@@ -117,6 +147,10 @@ export default function ImporterPage() {
     setImportId(data.importId ?? '')
     setItems(parsed)
     setStep('review')
+  }
+
+  function cancelAnalysis() {
+    abortControllerRef.current?.abort()
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, forceMime?: string) {
@@ -210,6 +244,8 @@ export default function ImporterPage() {
   }
 
   function resetInput() {
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
     setStep('input')
     setText('')
     setItems([])
@@ -244,6 +280,13 @@ export default function ImporterPage() {
                 : 'Identification des produits en cours…'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={cancelAnalysis}
+            className="text-sm text-ink-3 underline mt-2 hover:text-foreground transition-colors"
+          >
+            Annuler
+          </button>
         </div>
       </div>
     )
