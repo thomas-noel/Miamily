@@ -165,6 +165,18 @@ function cacheKey(householdId: string, mode: RecipeMode, moment: MealMoment, typ
   return `${householdId}:${mode}:${moment}:${type}:${fingerprint}:${lastMeal}:${lastHeaviness}:${prefsFp.slice(0, 40)}:${selectedFp}:${stylesFp}`
 }
 
+// ── Pantry basics — always considered available, never counted as missing ─
+const PANTRY_BASICS = new Set([
+  'sel', 'poivre', 'eau', 'huile', 'ail', 'oignon', 'echalote',
+  'herbe', 'epice', 'thym', 'laurier', 'persil', 'paprika',
+  'cumin', 'curry', 'curcuma', 'cannelle', 'bouillon',
+])
+
+function isPantryBasic(ingredientCanonical: string): boolean {
+  const canonical = toCanonicalName(ingredientCanonical)
+  return canonical.split(' ').some((w) => PANTRY_BASICS.has(w))
+}
+
 // ── Matching ──────────────────────────────────────────────────────────
 function matchIngredient(ingredientCanonical: string, inventory: InventoryRow[]): boolean {
   const canonical = toCanonicalName(ingredientCanonical)
@@ -208,7 +220,7 @@ function buildInventoryText(items: InventoryRow[]): string {
 
 const MODE_PROMPT: Record<RecipeMode, string> = {
   normal: 'Équilibre goût/simplicité, pas de contrainte particulière.',
-  rapide: 'MAX 20 min, ≤5 étapes. JAMAIS four, mijoter, ou cuisson longue. Types imposés: omelette, poêlée, pâtes-express, wrap, sauté rapide. duration_minutes ≤20.',
+  rapide: '10 à 25 min, ≤5 étapes. JAMAIS four, mijoter, ou cuisson longue. Types imposés: omelette, poêlée, pâtes-express, wrap, sauté rapide. duration_minutes ≤25.',
   leger:  '<500 kcal par portion. JAMAIS pâtes en plat principal, crème fraîche, gratin, fromage fondu en grande quantité. Imposer: légumes, œufs, poisson, salade composée, soupe légère.',
 }
 
@@ -332,7 +344,7 @@ export async function POST(request: NextRequest) {
   const personCount = members.length > 0 ? members.length : 2
   const hasChild = members.some((m) => m.is_child)
   const childNote = hasChild
-    ? ' ENFANTS présents : recettes simples, peu d\'ingrédients complexes, goûts doux (pas épicé, pas fort), présentation simple.'
+    ? ' ENFANTS présents : recettes rassurantes et simples (pas épicé, pas amer, pas trop original), goûts doux, présentation simple.'
     : ''
   const modeBlock = `${personCount} pers. ${MODE_PROMPT[mode]}${childNote}`
 
@@ -341,14 +353,29 @@ export async function POST(request: NextRequest) {
   const mealContextBlock = buildMealContextBlock(mealMoment, mealType)
   const stylesLine = cuisineStylesPromptLine(cuisineStyleIds)
 
-  const prompt = `Stock (!Nj=périme dans N jours):
+  const prompt = `Tu es un assistant culinaire pour une famille française. Génère 3 recettes FAMILIALES, CLASSIQUES et RÉALISTES.
+
+RÈGLES ABSOLUES :
+- Propose uniquement des plats qu'une famille cuisinerait en semaine : pâtes, riz, omelette, poêlée, soupe, gratin, curry doux, salade composée.
+- Utilise les ingrédients du stock SEULEMENT s'ils s'intègrent naturellement dans un plat classique.
+- N'invente PAS de combinaisons pour utiliser le stock. Il vaut mieux ignorer un ingrédient que forcer une association bizarre.
+- N'associe JAMAIS fruits et viande sauf plat réellement classique (ex : canard à l'orange).
+- Évite toute association sucrée/salée non conventionnelle.
+- Les titres doivent être simples et appétissants : "Pâtes au thon", "Riz sauté au poulet", "Gratin de courgettes".
+- Priorité aux ingrédients signalés !j (bientôt périmés) uniquement s'ils s'intègrent naturellement dans la recette.
+- Chaque recette doit utiliser 2 à 4 ingrédients du stock. Vise ≥60 % d'ingrédients disponibles dans la recette.
+- Les basiques de cuisine (sel, poivre, eau, huile, ail, oignon, herbes, épices courantes, bouillon) sont toujours disponibles et ne doivent pas compter comme ingrédients manquants structurants.
+- Limite les ingrédients vraiment manquants (hors basiques) à 2 ou 3 maximum.
+- Si ≥60 % est impossible sans forcer une association bizarre, une recette à 50 % est acceptable.
+
+Stock disponible (!Nj = périme dans N jours) :
 ${inventoryText}
 
 Mode: ${modeBlock}
 Contexte repas: ${mealContextBlock}
-${stylesLine ? stylesLine + '\n' : ''}Exclure: ${excludeText} | Éviter (déjà cuisiné): ${recentText}
+${stylesLine ? stylesLine + '\n' : ''}Éviter (déjà cuisiné): ${recentText} | Exclure: ${excludeText}
 ${prefsText ? '\n' + prefsText : ''}
-3 recettes JSON DIFFÉRENTES adaptées STRICTEMENT au contexte repas, au mode et aux préférences. ≥60% du stock·!j priorité·max 3 manquants·canonical=singulier
+Génère 3 recettes JSON différentes, adaptées au contexte repas et au mode. Jusqu'à 3 ingrédients courants non listés acceptés. canonical_name=singulier minuscule.
 
 {"recipes":[{"name":"...","duration_minutes":20,"persons":2,"steps":["..."],"ingredients":[{"name":"Courgettes","canonical_name":"courgette","quantity":2,"unit":"unité(s)"}]}]}`
 
@@ -405,7 +432,7 @@ ${prefsText ? '\n' + prefsText : ''}
   const recipes: Recipe[] = aiResponse.recipes.map((recipe) => {
     const ingredients: RecipeIngredient[] = recipe.ingredients.map((ing) => ({
       ...ing,
-      available: matchIngredient(ing.canonical_name, inventory),
+      available: isPantryBasic(ing.canonical_name) || matchIngredient(ing.canonical_name, inventory),
     }))
     const available = ingredients.filter((i) => i.available).length
     const coverage_pct = ingredients.length > 0 ? Math.round((available / ingredients.length) * 100) : 0

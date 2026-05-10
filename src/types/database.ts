@@ -46,6 +46,20 @@ export type SavedRecipe = {
   created_at: string
 }
 
+export type ShoppingListItem = {
+  id: string
+  household_id: string
+  name: string
+  canonical_name: string | null
+  quantity: number | null
+  unit: string | null
+  is_checked: boolean
+  added_by: string | null
+  source: 'manual' | 'recipe'
+  recipe_name: string | null
+  created_at: string
+}
+
 export type InventoryItem = {
   id: string
   household_id: string

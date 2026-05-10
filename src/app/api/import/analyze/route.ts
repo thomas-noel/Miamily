@@ -30,7 +30,7 @@ const PDF_PROMPT = `Tu es un assistant qui extrait une liste de produits aliment
 
 Pour chaque produit alimentaire détecté, retourne :
 - name: string — nom d'affichage propre en français, singulier, sans marque
-- canonical_name: string — nom racine singulier strict, en minuscules, sans adjectif (ex: "pate", "yaourt", "lait")
+- canonical_name: string — nom racine singulier strict, en FRANÇAIS, en minuscules, sans adjectif (ex: "pate", "yaourt", "lait")
 - quantity: number — nombre d'unités commandées/achetées
 - unit: string — parmi : "g", "kg", "ml", "cl", "l", "unité(s)", "tranche(s)", "portion(s)", "boîte(s)", "sachet(s)", "bouteille(s)"
 - storage_location: "fridge" | "pantry" | "freezer"
@@ -50,21 +50,27 @@ Ne retourne rien d'autre que ce JSON.`
 // Prompt for PHOTO input: frigo, placard, or receipt — multilingual support
 const PHOTO_PROMPT = `Tu es un assistant qui extrait une liste de produits alimentaires à partir d'une image.
 
+RÈGLE ABSOLUE : tous les champs name ET canonical_name doivent être en français, quelle que soit la langue du ticket ou de l'image.
+
 L'image peut être : une photo de frigo, un placard, des courses posées, ou un ticket de caisse (reçu de supermarché).
 
 Si c'est un ticket de caisse :
 - IGNORE complètement : prix unitaires, montants, remises, promotions, total, sous-total, TVA, codes-barres, références produits, numéros de ticket, moyens de paiement, informations carte bancaire, adresse du magasin, horaires, mentions légales.
-- Le ticket peut être en français, espagnol, anglais ou toute autre langue européenne — traduis les noms d'affichage en français.
+- Le ticket peut être en français, espagnol, anglais ou toute autre langue — traduis systématiquement les noms en français.
+- Lis le ticket de haut en bas, ligne par ligne, jusqu'à la ligne TOTAL. N'arrête pas après les premiers produits.
+- Chaque ligne correspondant à un produit alimentaire doit produire un item JSON, même si le nom est partiellement lisible — extrais ce qui est exploitable.
 - Extrait uniquement les lignes correspondant à des produits alimentaires.
 - La quantité est le nombre d'articles achetés. Si non précisé, utilise 1.
 
 Pour chaque produit alimentaire détecté, retourne :
 - name: string — nom d'affichage propre en français, singulier, sans marque (ex: "Lait demi-écrémé", "Tomates cerises")
-- canonical_name: string — nom racine singulier strict, en minuscules, sans adjectif ni marque (ex: "lait", "tomate", "yaourt")
+- canonical_name: string — nom racine singulier strict, en FRANÇAIS, en minuscules, sans adjectif ni marque (ex: "lait", "tomate", "yaourt", "poulet", "courgette", "fromage", "jambon")
 - quantity: number — quantité estimée visible ; si impossible à déterminer, utilise 1
 - unit: string — parmi : "g", "kg", "ml", "cl", "l", "unité(s)", "tranche(s)", "portion(s)", "boîte(s)", "sachet(s)", "bouteille(s)"
 - storage_location: "fridge" | "pantry" | "freezer"
 - estimated_expiry_days: number
+
+Si l'image est une capture d'écran d'application, une interface numérique, un document non alimentaire, ou ne contient pas de ticket de caisse, reçu, liste de courses, placard, frigo ou produit alimentaire identifiable, retourne { "items": [] } sans rien extraire.
 
 Liste tous les produits alimentaires détectables, même partiellement visibles. Ne cherche pas la perfection sur les quantités.
 
@@ -193,6 +199,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return Response.json({ error: 'AI parse error', raw: aiText }, { status: 500 })
   }
+
+  console.log('[analyze] items:', aiResponse.items.slice(0, 3).map(i => i.name))
 
   await logUsage(supabase, user.id, action)
 

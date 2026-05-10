@@ -22,6 +22,32 @@ function itemLabel(key: string): string {
   return cat ? `${cat.emoji} ${cat.label}` : key
 }
 
+type DemoItem = {
+  name: string
+  canonical_name: string
+  quantity: number
+  unit: string
+  storage_location: 'fridge' | 'pantry' | 'freezer'
+  estimated_expiry_days: number
+}
+
+const DEMO_STOCK: DemoItem[] = [
+  { name: 'Pâtes',              canonical_name: 'pate',             quantity: 500, unit: 'g',        storage_location: 'pantry',  estimated_expiry_days: 730 },
+  { name: 'Riz',                canonical_name: 'riz',              quantity: 1,   unit: 'kg',       storage_location: 'pantry',  estimated_expiry_days: 730 },
+  { name: 'Lentilles',          canonical_name: 'lentille',         quantity: 500, unit: 'g',        storage_location: 'pantry',  estimated_expiry_days: 730 },
+  { name: 'Thon en boîte',      canonical_name: 'thon',             quantity: 2,   unit: 'boîte(s)', storage_location: 'pantry',  estimated_expiry_days: 365 },
+  { name: 'Tomates concassées', canonical_name: 'tomate concassee', quantity: 2,   unit: 'boîte(s)', storage_location: 'pantry',  estimated_expiry_days: 365 },
+  { name: 'Lait UHT',           canonical_name: 'lait',             quantity: 1,   unit: 'l',        storage_location: 'pantry',  estimated_expiry_days: 90  },
+  { name: 'Œufs',               canonical_name: 'oeuf',             quantity: 6,   unit: 'unité(s)', storage_location: 'fridge',  estimated_expiry_days: 21  },
+  { name: 'Poulet',             canonical_name: 'poulet',           quantity: 600, unit: 'g',        storage_location: 'fridge',  estimated_expiry_days: 3   },
+  { name: 'Courgettes',         canonical_name: 'courgette',        quantity: 3,   unit: 'unité(s)', storage_location: 'fridge',  estimated_expiry_days: 7   },
+  { name: 'Carottes',           canonical_name: 'carotte',          quantity: 500, unit: 'g',        storage_location: 'fridge',  estimated_expiry_days: 14  },
+  { name: 'Crème fraîche',      canonical_name: 'creme',            quantity: 200, unit: 'ml',       storage_location: 'fridge',  estimated_expiry_days: 7   },
+  { name: 'Fromage râpé',       canonical_name: 'fromage rape',     quantity: 200, unit: 'g',        storage_location: 'fridge',  estimated_expiry_days: 14  },
+  { name: 'Tomates fraîches',   canonical_name: 'tomate',           quantity: 4,   unit: 'unité(s)', storage_location: 'fridge',  estimated_expiry_days: 5   },
+  { name: 'Petits pois surgelés', canonical_name: 'petit pois',     quantity: 500, unit: 'g',        storage_location: 'freezer', estimated_expiry_days: 365 },
+]
+
 export default function PreferencesPage() {
   const supabase = createClient()
   const householdIdRef = useRef<string | null>(null)
@@ -53,6 +79,11 @@ export default function PreferencesPage() {
   const [clearingStock, setClearingStock] = useState(false)
   const [clearStockError, setClearStockError] = useState<string | null>(null)
   const [clearStockDone, setClearStockDone] = useState(false)
+
+  const [showDemoStock, setShowDemoStock] = useState(false)
+  const [addingDemoStock, setAddingDemoStock] = useState(false)
+  const [demoStockResult, setDemoStockResult] = useState<string | null>(null)
+  const [demoStockError, setDemoStockError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -234,6 +265,77 @@ export default function PreferencesPage() {
       supabase.from('household_members').delete().eq('profile_id', user.id),
     ])
     window.location.href = '/household/join'
+  }
+
+  async function handleAddDemoStock() {
+    if (!householdIdRef.current) return
+    setAddingDemoStock(true)
+    setDemoStockError(null)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setAddingDemoStock(false); return }
+
+    // One query to fetch existing items, then compare client-side
+    const { data: existing, error: fetchError } = await supabase
+      .from('inventory_items')
+      .select('canonical_name, unit, storage_location')
+      .eq('household_id', householdIdRef.current)
+
+    if (fetchError) {
+      setDemoStockError(`Erreur : ${fetchError.message}`)
+      setAddingDemoStock(false)
+      return
+    }
+
+    const existingKeys = new Set(
+      (existing ?? []).map((i) => `${i.canonical_name}|${i.unit}|${i.storage_location}`)
+    )
+
+    const now = new Date()
+    const toInsert = DEMO_STOCK
+      .filter((item) => !existingKeys.has(`${item.canonical_name}|${item.unit}|${item.storage_location}`))
+      .map((item) => {
+        const expiryDate = new Date(now)
+        expiryDate.setDate(now.getDate() + item.estimated_expiry_days)
+        return {
+          household_id: householdIdRef.current!,
+          name: item.name,
+          normalized_name: item.canonical_name,
+          canonical_name: item.canonical_name,
+          category_id: null,
+          quantity: item.quantity,
+          unit: item.unit,
+          storage_location: item.storage_location,
+          expiry_date: null,
+          estimated_expiry_date: expiryDate.toISOString().split('T')[0],
+          is_expiry_estimated: true,
+          source: 'paste' as const,
+          added_by: user.id,
+        }
+      })
+
+    const skipped = DEMO_STOCK.length - toInsert.length
+
+    if (toInsert.length === 0) {
+      setAddingDemoStock(false)
+      setShowDemoStock(false)
+      setDemoStockResult(`0 produit ajouté, ${skipped} déjà présent${skipped > 1 ? 's' : ''}.`)
+      setTimeout(() => setDemoStockResult(null), 5000)
+      return
+    }
+
+    const { error: insertError } = await supabase.from('inventory_items').insert(toInsert)
+    setAddingDemoStock(false)
+
+    if (insertError) {
+      setDemoStockError(`Erreur : ${insertError.message}`)
+      return
+    }
+
+    const added = toInsert.length
+    setShowDemoStock(false)
+    setDemoStockResult(`${added} produit${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}, ${skipped} déjà présent${skipped > 1 ? 's' : ''}.`)
+    setTimeout(() => setDemoStockResult(null), 5000)
   }
 
   async function handleClearStock() {
@@ -504,6 +606,54 @@ export default function PreferencesPage() {
         {clearStockDone && (
           <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             Stock vidé. Tous les produits ont été supprimés.
+          </div>
+        )}
+
+        {demoStockResult && (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {demoStockResult}
+          </div>
+        )}
+
+        {!showDemoStock ? (
+          <button
+            type="button"
+            onClick={() => setShowDemoStock(true)}
+            disabled={!householdIdRef.current}
+            className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left hover:bg-muted transition-colors disabled:opacity-40"
+          >
+            <Plus className="w-5 h-5 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium">Ajouter un stock de démo</span>
+          </button>
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <p className="text-sm font-semibold">Ajouter un stock de démo ?</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              14 produits types : pâtes, riz, lentilles, thon, tomates concassées, lait, œufs, poulet, courgettes, carottes, crème fraîche, fromage, tomates fraîches, petits pois surgelés.
+            </p>
+            <p className="text-xs text-muted-foreground">Les produits déjà présents dans votre stock ne seront pas modifiés.</p>
+            {demoStockError && (
+              <p className="text-xs text-destructive">{demoStockError}</p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                onClick={handleAddDemoStock}
+                disabled={addingDemoStock}
+              >
+                {addingDemoStock
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : 'Ajouter le stock de démo'}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => { setShowDemoStock(false); setDemoStockError(null) }}
+                disabled={addingDemoStock}
+              >
+                Annuler
+              </Button>
+            </div>
           </div>
         )}
 

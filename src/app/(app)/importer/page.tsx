@@ -193,10 +193,10 @@ export default function ImporterPage() {
     }
 
     img.onload = () => {
-      // Redimensionne à 1200 px max — suffisant pour lire un ticket, réduit le payload de ~60 %
+      // Redimensionne à 1600 px max — meilleure lisibilité pour les tickets longs (~32px/ligne)
       let w = img.naturalWidth
       let h = img.naturalHeight
-      const maxDim = 1200
+      const maxDim = 1600
       if (w > maxDim || h > maxDim) {
         const scale = maxDim / Math.max(w, h)
         w = Math.round(w * scale)
@@ -230,7 +230,7 @@ export default function ImporterPage() {
           analyze({ image: dataUrl.split(',')[1], mimeType: 'image/jpeg' })
         }
         reader.readAsDataURL(blob)
-      }, 'image/jpeg', 0.75)
+      }, 'image/jpeg', 0.82)
     }
 
     img.src = objectUrl
@@ -542,7 +542,8 @@ export default function ImporterPage() {
             Importer un ticket
           </Button>
           <p className="text-xs text-ink-4 text-center">
-            Cadrez uniquement le ticket, bien à plat, fond uni.
+            Cadrez uniquement le ticket, bien à plat, fond uni.<br />
+            Pour un ticket long, prenez plusieurs photos rapprochées ou importez le reçu PDF.
           </p>
           <input
             ref={ticketRef}

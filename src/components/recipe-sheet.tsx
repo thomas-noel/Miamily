@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronLeft, X, Check, Heart } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronLeft, X, Check, Heart, ShoppingCart } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Recipe, RecipeMode, MealMoment, MealType } from '@/app/api/recettes/suggest/route'
 import { Badge } from '@/components/ui/badge'
@@ -43,10 +44,17 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
   const [cooked, setCooked] = useState(false)
   const [savedId, setSavedId] = useState<string | null>(savedRecipeId ?? null)
   const [saving, setSaving] = useState(false)
+  const [addingToCart, setAddingToCart] = useState(false)
+  const [cartToast, setCartToast] = useState<string | null>(null)
 
   useEffect(() => {
     setSavedId(savedRecipeId ?? null)
   }, [savedRecipeId])
+
+  useEffect(() => {
+    setCartToast(null)
+    setAddingToCart(false)
+  }, [recipe?.name])
 
   if (!recipe) return null
 
@@ -141,8 +149,58 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
     setTimeout(() => onOpenChange(false), 1200)
   }
 
+  async function handleAddMissing() {
+    if (!recipe || addingToCart || missing.length === 0) return
+    setAddingToCart(true)
+
+    const { data: existing } = await supabase
+      .from('shopping_list_items')
+      .select('canonical_name, unit')
+      .eq('household_id', householdId)
+      .eq('is_checked', false)
+
+    const existingSet = new Set(
+      (existing ?? []).map(e => `${e.canonical_name ?? ''}|${e.unit ?? ''}`)
+    )
+
+    const toInsert = missing.filter(ing =>
+      !existingSet.has(`${ing.canonical_name}|${ing.unit}`)
+    )
+    const skipped = missing.length - toInsert.length
+
+    if (toInsert.length > 0) {
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('shopping_list_items').insert(
+        toInsert.map(ing => ({
+          household_id: householdId,
+          name: ing.name,
+          canonical_name: ing.canonical_name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          is_checked: false,
+          added_by: user?.id ?? null,
+          source: 'recipe' as const,
+          recipe_name: recipe.name,
+        }))
+      )
+    }
+
+    let msg: string
+    if (toInsert.length > 0 && skipped > 0) {
+      msg = `${toInsert.length} produit${toInsert.length > 1 ? 's' : ''} ajouté${toInsert.length > 1 ? 's' : ''} · ${skipped} déjà présent${skipped > 1 ? 's' : ''}`
+    } else if (toInsert.length > 0) {
+      msg = `${toInsert.length} produit${toInsert.length > 1 ? 's' : ''} ajouté${toInsert.length > 1 ? 's' : ''} aux courses`
+    } else {
+      msg = 'Déjà dans la liste'
+    }
+
+    setCartToast(msg)
+    setAddingToCart(false)
+    setTimeout(() => setCartToast(null), 4000)
+  }
+
   return (
-    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setCooked(false) }} disablePointerDismissal>
+    <Sheet open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setCooked(false); setCartToast(null) } }} disablePointerDismissal>
       <SheetContent
         side="bottom"
         className="w-full max-w-full rounded-t-2xl max-h-[92vh] overflow-y-auto overflow-x-hidden p-0 gap-0 bg-background"
@@ -286,6 +344,33 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
           >
             {cooked ? '✓ Bon appétit !' : cooking ? 'Enregistrement…' : 'Cuisiner ce repas'}
           </Button>
+
+          {!cooked && missing.length > 0 && (
+            <Button
+              variant="outline"
+              className="w-full mt-2"
+              onClick={handleAddMissing}
+              disabled={addingToCart}
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {addingToCart
+                ? 'Ajout…'
+                : `Ajouter les ${missing.length} manquant${missing.length > 1 ? 's' : ''} aux courses`}
+            </Button>
+          )}
+
+          {cartToast && (
+            <div className="flex items-center justify-between mt-2 px-0.5">
+              <p className="text-[11px] text-ink-3">{cartToast}</p>
+              <Link
+                href="/courses"
+                className="text-[11px] text-primary font-medium hover:underline underline-offset-2 ml-2 shrink-0"
+              >
+                Voir la liste →
+              </Link>
+            </div>
+          )}
+
           {!cooked && available.length > 0 && (
             <p className="text-[11px] text-ink-3 text-center mt-2">
               Les ingrédients utilisés seront retirés du stock.
