@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, ShoppingCart, Trash2, ChevronDown, ChevronUp, Check } from 'lucide-react'
+import { Plus, ShoppingCart, Trash2, ChevronDown, ChevronUp, Check, Share2, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { ShoppingListItem } from '@/types/database'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,14 @@ const UNITS = [
   'tranche(s)', 'portion(s)', 'boîte(s)', 'sachet(s)', 'bouteille(s)',
 ]
 
+function buildShareText(items: ShoppingListItem[]): string {
+  const lines = items.map(item => {
+    const qty = item.quantity && item.unit ? ` — ${item.quantity} ${item.unit}` : ''
+    return `☐ ${item.name}${qty}`
+  })
+  return `Liste de courses Miamily\n\n${lines.join('\n')}`
+}
+
 export default function CoursesPage() {
   const supabase = createClient()
   const [items, setItems] = useState<ShoppingListItem[]>([])
@@ -22,12 +30,19 @@ export default function CoursesPage() {
   const [userId, setUserId] = useState('')
   const [loading, setLoading] = useState(true)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [checkedOpen, setCheckedOpen] = useState(false)
   const [addName, setAddName] = useState('')
   const [addQty, setAddQty] = useState('')
   const [addUnit, setAddUnit] = useState('unité(s)')
   const [adding, setAdding] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [canShare, setCanShare] = useState(false)
+
+  useEffect(() => {
+    setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function')
+  }, [])
 
   const loadData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -109,6 +124,26 @@ export default function CoursesPage() {
     setAdding(false)
   }
 
+  async function handleCopy() {
+    const text = buildShareText(unchecked)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      // clipboard non disponible — rien à faire
+    }
+  }
+
+  async function handleShare() {
+    const text = buildShareText(unchecked)
+    try {
+      await navigator.share({ title: 'Liste de courses Miamily', text })
+    } catch {
+      // annulé par l'utilisateur ou non supporté
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col min-h-[calc(100vh-4rem)] pb-20">
@@ -137,14 +172,24 @@ export default function CoursesPage() {
               </p>
             )}
           </div>
-          <Button
-            variant="soft"
-            size="icon"
-            onClick={() => setSheetOpen(true)}
-            aria-label="Ajouter un article"
-          >
-            <Plus className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShareOpen(true)}
+              aria-label="Partager la liste"
+            >
+              <Share2 className="w-5 h-5" />
+            </Button>
+            <Button
+              variant="soft"
+              size="icon"
+              onClick={() => setSheetOpen(true)}
+              aria-label="Ajouter un article"
+            >
+              <Plus className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Empty state */}
@@ -176,7 +221,7 @@ export default function CoursesPage() {
           </div>
         )}
 
-        {/* Checked section */}
+        {/* Checked section — "Déjà pris" */}
         {checked.length > 0 && (
           <div className="px-4 mt-4">
             <button
@@ -188,7 +233,7 @@ export default function CoursesPage() {
                 ? <ChevronUp className="w-4 h-4 text-ink-3" />
                 : <ChevronDown className="w-4 h-4 text-ink-3" />}
               <span className="text-sm font-medium text-ink-3">
-                Dans le panier ({checked.length})
+                Dans mon caddie ({checked.length})
               </span>
             </button>
 
@@ -209,13 +254,53 @@ export default function CoursesPage() {
                   className="flex items-center gap-1.5 text-sm text-ink-3 hover:text-destructive transition-colors mt-1 py-1 disabled:opacity-50"
                 >
                   <Trash2 className="w-4 h-4" />
-                  {clearing ? 'Suppression…' : 'Vider le panier'}
+                  {clearing ? 'Suppression…' : 'Vider mon caddie'}
                 </button>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Share Sheet */}
+      <Sheet open={shareOpen} onOpenChange={(v) => { setShareOpen(v); if (!v) setCopied(false) }}>
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+          showCloseButton={false}
+        >
+          <SheetHeader className="p-0 mb-5">
+            <SheetTitle className="font-serif text-xl font-normal text-left">
+              Partager la liste
+            </SheetTitle>
+          </SheetHeader>
+
+          {unchecked.length === 0 ? (
+            <p className="text-sm text-ink-3">Aucun article à partager.</p>
+          ) : (
+            <div className="space-y-2">
+              <Button
+                variant="secondary"
+                className="w-full justify-start gap-3"
+                onClick={handleCopy}
+              >
+                <Copy className="w-4 h-4" />
+                {copied ? '✓ Liste copiée' : 'Copier la liste'}
+              </Button>
+              {canShare && (
+                <Button
+                  variant="secondary"
+                  className="w-full justify-start gap-3"
+                  onClick={handleShare}
+                >
+                  <Share2 className="w-4 h-4" />
+                  Partager
+                </Button>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Add Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
