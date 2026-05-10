@@ -48,6 +48,12 @@ export default function PreferencesPage() {
   const [newDisliked, setNewDisliked] = useState('')
   const [newForbidden, setNewForbidden] = useState('')
 
+  const [showClearStock, setShowClearStock] = useState(false)
+  const [clearStockInput, setClearStockInput] = useState('')
+  const [clearingStock, setClearingStock] = useState(false)
+  const [clearStockError, setClearStockError] = useState<string | null>(null)
+  const [clearStockDone, setClearStockDone] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -228,6 +234,25 @@ export default function PreferencesPage() {
       supabase.from('household_members').delete().eq('profile_id', user.id),
     ])
     window.location.href = '/household/join'
+  }
+
+  async function handleClearStock() {
+    if (!householdIdRef.current || clearStockInput !== 'VIDER') return
+    setClearingStock(true)
+    setClearStockError(null)
+    const { error } = await supabase
+      .from('inventory_items')
+      .delete()
+      .eq('household_id', householdIdRef.current)
+    setClearingStock(false)
+    if (error) {
+      setClearStockError(`Erreur : ${error.message}`)
+      return
+    }
+    setClearStockInput('')
+    setShowClearStock(false)
+    setClearStockDone(true)
+    setTimeout(() => setClearStockDone(false), 4000)
   }
 
   const activeMember = members.find((m) => m.id === activeMemberId) ?? null
@@ -462,6 +487,68 @@ export default function PreferencesPage() {
                 className="flex-1"
                 onClick={() => setShowLeaveConfirm(false)}
                 disabled={leavingHousehold}
+              >
+                Annuler
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Section Outils */}
+      <div className="px-4 pb-8 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Outils
+        </p>
+
+        {clearStockDone && (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            Stock vidé. Tous les produits ont été supprimés.
+          </div>
+        )}
+
+        {!showClearStock ? (
+          <button
+            type="button"
+            onClick={() => setShowClearStock(true)}
+            disabled={!householdIdRef.current}
+            className="w-full flex items-center gap-3 rounded-xl border border-destructive/30 bg-card p-4 text-left hover:bg-destructive/5 transition-colors disabled:opacity-40"
+          >
+            <Trash2 className="w-5 h-5 text-destructive/70 shrink-0" />
+            <span className="text-sm font-medium text-destructive">Vider le stock</span>
+          </button>
+        ) : (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+            <p className="text-sm font-semibold text-destructive">Vider tout le stock ?</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Tous les produits seront définitivement supprimés. Cette action est irréversible.
+              Tapez <strong>VIDER</strong> pour confirmer.
+            </p>
+            <Input
+              placeholder="Tapez VIDER pour confirmer"
+              value={clearStockInput}
+              onChange={(e) => setClearStockInput(e.target.value)}
+              autoFocus
+            />
+            {clearStockError && (
+              <p className="text-xs text-destructive">{clearStockError}</p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleClearStock}
+                disabled={clearStockInput !== 'VIDER' || clearingStock}
+              >
+                {clearingStock
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : 'Supprimer tous les produits'}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => { setShowClearStock(false); setClearStockInput(''); setClearStockError(null) }}
+                disabled={clearingStock}
               >
                 Annuler
               </Button>
