@@ -197,33 +197,25 @@ export default function RecipeSheet({ open, onOpenChange, recipe, mode, househol
         showCloseButton={false}
       >
 
-        {/* ── Hero — motif diagonal CSS, compatible sans photo ── */}
-        <div
-          className="relative h-36 bg-surface-muted overflow-hidden rounded-t-2xl shrink-0"
-          style={{
-            backgroundImage:
-              'repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(0,0,0,0.045) 8px, rgba(0,0,0,0.045) 9px)',
-          }}
-        >
+        {/* ── Header compact ── */}
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="absolute top-3 left-3 rounded-full p-1.5 bg-background/80 backdrop-blur-sm hover:bg-background transition-colors"
+            className="p-1.5 rounded-xl text-ink-3 hover:text-foreground hover:bg-muted transition-colors"
             aria-label="Fermer"
           >
-            <ChevronLeft className="w-5 h-5 text-ink-3" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="absolute top-3 right-4 flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleToggleSave}
               disabled={saving}
-              className="rounded-full p-1.5 bg-background/80 backdrop-blur-sm hover:bg-background transition-colors"
+              className="p-1.5 rounded-xl text-ink-3 hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
               aria-label={savedId ? 'Retirer des favoris' : 'Sauvegarder la recette'}
             >
-              <Heart
-                className={`w-5 h-5 transition-colors ${savedId ? 'text-destructive fill-destructive' : 'text-ink-3'}`}
-              />
+              <Heart className={`w-5 h-5 transition-colors ${savedId ? 'text-destructive fill-destructive' : ''}`} />
             </button>
             <BetaChip />
           </div>
