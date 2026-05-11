@@ -5,6 +5,7 @@ import { toCanonicalName } from '@/lib/canonical'
 import { daysUntilExpiry } from '@/lib/expiry'
 import { CATEGORY_LABEL, FOOD_CATEGORIES, type FoodCategoryId } from '@/lib/food-categories'
 import { cuisineStylesPromptLine } from '@/lib/cuisine-styles'
+import { getTemplatesForContext, buildTemplatesBlock } from '@/lib/dish-templates'
 import { checkUsage, logUsage, rateLimitMessage } from '@/lib/ai-rate-limit'
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
@@ -233,10 +234,40 @@ function isStructuring(canonical: string): boolean {
   return canonical.split(' ').some((w) => STRUCTURING_WORDS.has(w))
 }
 
-function scoreRecipe(recipe: Recipe): number {
+const STYLE_SCORE_KEYWORDS: Record<string, string[]> = {
+  wok:           ['wok', 'saute', 'poele'],
+  asiatique:     ['asiatique', 'japonais', 'chinois', 'thai', 'wok', 'saute', 'riz saute', 'nouilles', 'soja', 'gingembre', 'sesame', 'bol de riz'],
+  curry:         ['curry', 'massaman', 'tikka', 'korma'],
+  bowl:          ['bowl', 'bol', 'salade'],
+  salade:        ['salade', 'bowl', 'bol'],
+  soupe:         ['soupe', 'veloute', 'potage'],
+  risotto:       ['risotto'],
+  mediterraneen: ['provencal', 'ratatouille'],
+  gratin:        ['gratin', 'dauphinois'],
+  pates:         ['pates', 'carbonara', 'bolognese'],
+  pizza:         ['pizza', 'tarte'],
+  burger:        ['burger'],
+  traditionnel:  ['bourguignon', 'blanquette', 'cassoulet'],
+  proteine:      [],
+  enfant:        [],
+}
+
+function normalizeRecipeName(name: string): string {
+  return name
+    .replace(/[œŒ]/g, 'oe').replace(/[æÆ]/g, 'ae')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+}
+
+function scoreRecipe(recipe: Recipe, cuisineStyleIds: string[]): number {
+  const nameLower = normalizeRecipeName(recipe.name)
+  const styleBonus = cuisineStyleIds.reduce((acc, styleId) => {
+    const keywords = STYLE_SCORE_KEYWORDS[styleId] ?? []
+    return acc + (keywords.some((kw) => nameLower.includes(kw)) ? 15 : 0)
+  }, 0)
   const missingStructuring = recipe.ingredients.filter((i) => !i.available && isStructuring(i.canonical_name)).length
   const missingOther = recipe.ingredients.filter((i) => !i.available && !isStructuring(i.canonical_name)).length
-  return recipe.coverage_pct - missingStructuring * 35 - missingOther * 8 + (recipe.anti_gaspillage ? 10 : 0)
+  return recipe.coverage_pct - missingStructuring * 35 - missingOther * 8 + (recipe.anti_gaspillage ? 10 : 0) + Math.min(styleBonus, 20)
 }
 
 function isExpiringIngredient(canonical: string, expiringSet: Set<string>): boolean {
@@ -275,6 +306,19 @@ const MODE_PROMPT: Record<RecipeMode, string> = {
 
 const MODE_HEAVINESS: Record<RecipeMode, 'light' | 'normal' | 'heavy'> = {
   leger: 'light', normal: 'normal', rapide: 'normal',
+}
+
+function buildModeBlock(mode: RecipeMode, personCount: number, hasChild: boolean, cuisineStyleIds: string[]): string {
+  let modeDesc = MODE_PROMPT[mode]
+  if (mode === 'normal' && cuisineStyleIds.some((s) => ['wok', 'asiatique', 'salade', 'bowl'].includes(s))) {
+    modeDesc = modeDesc
+      .replace(/gratins?,\s*/gi, '')
+      .replace(/tartes? salées?,\s*/gi, '')
+  }
+  const childNote = hasChild
+    ? ' ENFANTS présents : recettes rassurantes et simples (pas épicé, pas amer, pas trop original), goûts doux, présentation simple.'
+    : ''
+  return `${personCount} pers. ${modeDesc}${childNote}`
 }
 
 const TIMEOUT_MS = 10_000
@@ -392,15 +436,14 @@ export async function POST(request: NextRequest) {
 
   const personCount = members.length > 0 ? members.length : 2
   const hasChild = members.some((m) => m.is_child)
-  const childNote = hasChild
-    ? ' ENFANTS présents : recettes rassurantes et simples (pas épicé, pas amer, pas trop original), goûts doux, présentation simple.'
-    : ''
-  const modeBlock = `${personCount} pers. ${MODE_PROMPT[mode]}${childNote}`
+  const modeBlock = buildModeBlock(mode, personCount, hasChild, cuisineStyleIds)
 
   const prefsText = buildPreferencesText(members, memberPrefs)
 
   const mealContextBlock = buildMealContextBlock(mealMoment, mealType)
   const stylesLine = cuisineStylesPromptLine(cuisineStyleIds)
+  const { mainTemplates, fallbackTemplates } = getTemplatesForContext({ mode, mealMoment, cuisineStyleIds })
+  const templatesBlock = buildTemplatesBlock(mainTemplates, fallbackTemplates)
 
   const prompt = `Tu es un assistant culinaire pour une famille française. Génère 3 recettes FAMILIALES, CLASSIQUES et RÉALISTES.
 
@@ -422,7 +465,7 @@ ${inventoryText}
 
 Mode: ${modeBlock}
 Contexte repas: ${mealContextBlock}
-${stylesLine ? stylesLine + '\n' : ''}Éviter (déjà cuisiné): ${recentText} | Exclure: ${excludeText}
+${templatesBlock ? templatesBlock + '\n' : ''}${stylesLine ? stylesLine + '\n' : ''}Éviter (déjà cuisiné): ${recentText} | Exclure: ${excludeText}
 ${prefsText ? '\n' + prefsText : ''}
 Génère 3 recettes JSON différentes, adaptées au contexte repas et au mode. Jusqu'à 3 ingrédients courants non listés acceptés. canonical_name=racine générique du composant en minuscules sans accent (ex: "poulet" non "poulet rôti", "riz" non "riz express") — sauf produit transformé qui est l'ingrédient réel de la recette (ex: "poulet pane", "saumon fume", "tomate concassee").
 
@@ -503,8 +546,8 @@ Génère 3 recettes JSON différentes, adaptées au contexte repas et au mode. J
   }
 
   // Tri par pertinence : coverage + malus structurants manquants + bonus anti-gaspi
-  const finalRecipes = [...filteredRecipes].sort((a, b) => scoreRecipe(b) - scoreRecipe(a))
-  console.log(`[recettes] scores: ${finalRecipes.map(r => `${r.name}(${scoreRecipe(r)})`).join(' / ')}`)
+  const finalRecipes = [...filteredRecipes].sort((a, b) => scoreRecipe(b, cuisineStyleIds) - scoreRecipe(a, cuisineStyleIds))
+  console.log(`[recettes] scores: ${finalRecipes.map(r => `${r.name}(${scoreRecipe(r, cuisineStyleIds)})`).join(' / ')}`)
 
   await logUsage(supabase, user.id, 'recipe_generation')
   if (!noCache) setCached(key, finalRecipes)

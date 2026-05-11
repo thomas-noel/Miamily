@@ -22,8 +22,20 @@ const STYLE_LABEL: Record<string, string> = Object.fromEntries(
   CUISINE_STYLES.map((s) => [s.id, s.label])
 )
 
+const STYLE_OPPOSITES: Record<string, string[]> = {
+  wok:       ['gratin', 'quiche', 'tarte salée', 'béchamel', 'gratiné'],
+  asiatique: ['gratin', 'quiche', 'tarte salée', 'béchamel', 'dauphinois'],
+  bowl:      ['gratin', 'quiche', 'tarte salée'],
+  salade:    ['gratin', 'plat mijoté lourd'],
+}
+
 export function cuisineStylesPromptLine(styleIds: string[]): string {
   if (styleIds.length === 0) return ''
   const labels = styleIds.map((id) => STYLE_LABEL[id] ?? id).join(', ')
-  return `STYLES APPRÉCIÉS : ${labels}. Propose en priorité des recettes dans ces styles quand le stock le permet.`
+  const toAvoid = [...new Set(styleIds.flatMap((id) => STYLE_OPPOSITES[id] ?? []))]
+  const avoidLine = toAvoid.length > 0
+    ? `\nÉvite autant que possible ces types contraires aux styles demandés, sauf si le stock ne permet pas de recette cohérente dans les styles choisis : ${toAvoid.join(', ')}.`
+    : ''
+  return `STYLES CUISINE DEMANDÉS (DEMANDE EXPLICITE) : ${labels}.
+Propose AU MOINS 2 recettes sur 3 dans ces styles si le stock le permet. Ce n'est pas une préférence vague, c'est une demande explicite de la famille.${avoidLine}`
 }
