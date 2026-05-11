@@ -74,7 +74,7 @@ export default async function AccueilPage() {
           </div>
         </div>
         <h1 className="font-serif text-[32px] leading-[1.1] tracking-[-0.4px]">
-          Que prépare-t-on ce soir ?
+          Que prépare-t-on aujourd'hui ?
         </h1>
       </div>
 
