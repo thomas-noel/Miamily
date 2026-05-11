@@ -142,16 +142,16 @@ function setCached(key: string, recipes: Recipe[]) {
 function buildMealContextBlock(moment: MealMoment, type: MealType): string {
   const RULES: Record<MealMoment, Record<MealType, string>> = {
     'petit-dej': {
-      sale:  'PETIT-DÉJEUNER SALÉ → œufs brouillés, omelette, toast salé, avocado toast. JAMAIS gâteaux, crêpes sucrées, yaourts sucrés.',
-      sucre: 'PETIT-DÉJEUNER SUCRÉ → pancakes, crêpes, pain perdu, porridge, smoothie bowl, céréales. JAMAIS plats salés.',
+      sale:  'PETIT-DÉJEUNER SALÉ → œufs brouillés, omelette, toast salé, avocado toast. JAMAIS : pâtes, riz, gratin, quiche, plat mijoté, soupe-repas, plat principal complet, gâteaux, crêpes sucrées, yaourts sucrés.',
+      sucre: 'PETIT-DÉJEUNER SUCRÉ → pancakes, crêpes, pain perdu, porridge, smoothie bowl, céréales. JAMAIS : plats salés, pâtes, riz, gratin, quiche, plat mijoté, soupe-repas.',
     },
     dejeuner: {
       sale:  'DÉJEUNER SALÉ → plat principal complet et nourrissant : viande ou poisson + légumes + féculents. JAMAIS desserts, plats sucrés.',
       sucre: 'DÉJEUNER SUCRÉ → dessert ou plat sucré pour le midi : tarte, gâteau, crêpes. JAMAIS plats salés principaux.',
     },
     gouter: {
-      sale:  'GOÛTER SALÉ → petite portion légère : toast, dips, fromage, œufs durs. JAMAIS plats complets, desserts sucrés.',
-      sucre: 'GOÛTER SUCRÉ → petite douceur sucrée : gâteau, cookies, compote, fruits cuits, yaourt. JAMAIS plats principaux salés.',
+      sale:  'GOÛTER SALÉ → petite portion légère : toast, dips, fromage, œufs durs. JAMAIS : pâtes, riz, gratin, quiche, plat mijoté, soupe-repas, plat principal complet, desserts sucrés.',
+      sucre: 'GOÛTER SUCRÉ → petite douceur sucrée : gâteau, cookies, compote, fruits cuits, yaourt. JAMAIS : plats salés principaux, pâtes, riz, gratin, plat mijoté.',
     },
     diner: {
       sale:  'DÎNER SALÉ → plat principal du soir : repas chaud équilibré, viande/poisson/œufs + légumes. JAMAIS desserts, crêpes sucrées.',
@@ -259,6 +259,12 @@ function normalizeRecipeName(name: string): string {
     .toLowerCase()
 }
 
+function isMentionedInTitle(ingredientCanonical: string, recipeName: string): boolean {
+  const recipeCanonical = toCanonicalName(recipeName)
+  const ingCanonical = toCanonicalName(ingredientCanonical)
+  return ingCanonical.length > 0 && recipeCanonical.includes(ingCanonical)
+}
+
 function scoreRecipe(recipe: Recipe, cuisineStyleIds: string[]): number {
   const nameLower = normalizeRecipeName(recipe.name)
   const styleBonus = cuisineStyleIds.reduce((acc, styleId) => {
@@ -266,8 +272,11 @@ function scoreRecipe(recipe: Recipe, cuisineStyleIds: string[]): number {
     return acc + (keywords.some((kw) => nameLower.includes(kw)) ? 15 : 0)
   }, 0)
   const missingStructuring = recipe.ingredients.filter((i) => !i.available && isStructuring(i.canonical_name)).length
+  const missingInTitle = recipe.ingredients.filter(
+    (i) => !i.available && isStructuring(i.canonical_name) && isMentionedInTitle(i.canonical_name, recipe.name)
+  ).length
   const missingOther = recipe.ingredients.filter((i) => !i.available && !isStructuring(i.canonical_name)).length
-  return recipe.coverage_pct - missingStructuring * 35 - missingOther * 8 + (recipe.anti_gaspillage ? 10 : 0) + Math.min(styleBonus, 20)
+  return recipe.coverage_pct - missingStructuring * 35 - missingInTitle * 25 - missingOther * 8 + (recipe.anti_gaspillage ? 10 : 0) + Math.min(styleBonus, 20)
 }
 
 function isExpiringIngredient(canonical: string, expiringSet: Set<string>): boolean {
