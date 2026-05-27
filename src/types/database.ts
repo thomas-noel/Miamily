@@ -2,6 +2,7 @@ export type Profile = {
   id: string
   display_name: string
   household_id: string | null
+  onboarded: boolean
   created_at: string
 }
 

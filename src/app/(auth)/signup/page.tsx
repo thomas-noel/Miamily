@@ -49,7 +49,7 @@ export default function SignupPage() {
         return
       }
 
-      window.location.href = '/household/create'
+      window.location.href = '/onboarding/welcome'
     } catch {
       setError('Erreur réseau. Vérifie ta connexion.')
     } finally {
