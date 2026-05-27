@@ -78,6 +78,25 @@ export async function logUsage(
   }
 }
 
+/** Return today's usage count + daily limit for a given action. */
+export async function getUsage(
+  supabase: SupabaseLike,
+  userId: string,
+  action: AiAction
+): Promise<{ used: number; total: number }> {
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+
+  const { data } = await supabase
+    .from('ai_usage_logs')
+    .select('created_at')
+    .eq('user_id', userId)
+    .eq('action_type', action)
+    .gte('created_at', todayStart.toISOString())
+
+  return { used: (data ?? []).length, total: DAILY_LIMITS[action] }
+}
+
 /** Human-readable error messages for rate-limit responses. */
 export function rateLimitMessage(result: CheckResult & { allowed: false }): string {
   if (result.reason === 'cooldown') {

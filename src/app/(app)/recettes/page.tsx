@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { BetaChip } from '@/components/ui/beta-chip'
+import { QuotaPill } from '@/components/ui/quota-pill'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
@@ -79,10 +80,24 @@ export default function RecettesPage() {
   const [currentSavedId, setCurrentSavedId] = useState<string | null>(null)
   const fetchingRef = useRef(false)
 
+  const [quotaUsed, setQuotaUsed] = useState<number | null>(null)
+  const [quotaTotal, setQuotaTotal] = useState(20)
+
+  async function fetchQuota() {
+    try {
+      const res = await fetch('/api/quota')
+      if (!res.ok) return
+      const { used, total } = await res.json()
+      setQuotaUsed(used)
+      setQuotaTotal(total)
+    } catch {}
+  }
+
   useEffect(() => {
     async function loadMembers() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      fetchQuota()
       const { data: profile } = await supabase
         .from('profiles').select('household_id').eq('id', user.id).single()
       if (!profile?.household_id) return
@@ -206,6 +221,7 @@ export default function RecettesPage() {
       const now = new Date()
       setGeneratedAt(now)
       setStep('results')
+      fetchQuota()
       try {
         sessionStorage.setItem(`miamily_recipes_${hid}`, JSON.stringify({
           recipes: data.recipes ?? [],
@@ -252,7 +268,10 @@ export default function RecettesPage() {
         >
           <ChevronLeft className="w-5 h-5 text-ink-3" />
         </button>
-        <BetaChip />
+        <div className="flex items-center gap-2">
+          {quotaUsed !== null && <QuotaPill used={quotaUsed} total={quotaTotal} />}
+          <BetaChip />
+        </div>
       </div>
 
       {/* Titre */}
