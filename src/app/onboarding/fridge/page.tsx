@@ -22,6 +22,7 @@ export default function FridgePage() {
   }
 
   const count = fridgeItems.length
+  const maxReached = count >= copy.maxItems
   const ctaLabel = count === 0 ? copy.ctaEmpty : copy.cta(count)
 
   function handleNext() {
@@ -76,16 +77,25 @@ export default function FridgePage() {
         </div>
 
         {/* Checklist produits */}
-        <div className="flex flex-wrap gap-2">
-          {copy.items.map((item) => (
-            <Chip
-              key={item}
-              on={fridgeItems.includes(item)}
-              onClick={() => toggle(item)}
-            >
-              {item}
-            </Chip>
-          ))}
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-ink-3">
+            {copy.counter(count, copy.maxItems)}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {copy.items.map((item) => {
+              const isOn = fridgeItems.includes(item)
+              return (
+                <Chip
+                  key={item}
+                  on={isOn}
+                  disabled={maxReached && !isOn}
+                  onClick={() => toggle(item)}
+                >
+                  {item}
+                </Chip>
+              )
+            })}
+          </div>
         </div>
 
         {/* J'ai déjà ma liste */}

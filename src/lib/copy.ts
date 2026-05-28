@@ -67,7 +67,15 @@ export const onboarding = {
       '✓ On a deviné les essentiels pour vous',
       '✓ Vous compléterez quand vous voulez',
     ],
-    items: ['Œufs', 'Pâtes', 'Riz', 'Pommes de terre', 'Oignons', 'Fromage râpé', 'Lait', 'Beurre', 'Tomates', 'Poulet'],
+    items: [
+      'Œufs', 'Pâtes', 'Riz', 'Pommes de terre', 'Oignons',
+      'Fromage râpé', 'Lait', 'Beurre', 'Tomates', 'Poulet',
+      'Carottes', 'Courgettes', 'Poivrons', 'Champignons', 'Épinards',
+      'Thon en boîte', 'Lardons', 'Yaourt', 'Crème fraîche', 'Pain de mie',
+    ],
+    maxItems: 10,
+    counter: (n: number, max: number) =>
+      n === 0 ? 'Choisissez jusqu\'à 10 produits' : `${n} / ${max} produits sélectionnés`,
     altList: "J'ai déjà ma liste",
     skipLink: 'Plus tard',
     ctaEmpty: 'Démarrer quand même',
