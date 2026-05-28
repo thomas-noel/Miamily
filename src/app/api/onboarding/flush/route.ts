@@ -13,7 +13,8 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
 
   // 1. Auth
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  console.log('[flush] 1. auth — user:', user?.id ?? null, '| error:', authError?.message ?? null)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   // 2. Profile
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
+  console.log('[flush] 2. profile — household_id:', profile?.household_id ?? null, '| error:', profileError?.message ?? null, '| code:', profileError?.code ?? null)
   if (profileError || !profile) {
     return Response.json({ error: 'profile_not_found' }, { status: 500 })
   }
@@ -30,23 +32,28 @@ export async function POST(request: NextRequest) {
   // 3. Payload
   const body = await request.json() as FlushPayload
   const { cuisineStyles = [], allergies = [], fridgeItems = [] } = body
+  console.log('[flush] 3. payload — cuisineStyles:', cuisineStyles.length, '| allergies:', allergies.length, '| fridgeItems:', fridgeItems.length)
 
   // 4. Ensure household
   let householdId: string
   if (profile.household_id) {
     householdId = profile.household_id as string
+    console.log('[flush] 4. household — existing:', householdId)
   } else {
+    console.log('[flush] 4. household — null, calling create_household RPC')
     const { error: rpcError } = await supabase.rpc('create_household', {
       p_name: 'Mon foyer',
     })
+    console.log('[flush] 4. RPC result — error:', rpcError?.message ?? null, '| code:', rpcError?.code ?? null)
     if (rpcError) {
-      return Response.json({ error: 'household_creation_failed' }, { status: 500 })
+      return Response.json({ error: 'household_creation_failed', detail: rpcError.message }, { status: 500 })
     }
-    const { data: refreshed } = await supabase
+    const { data: refreshed, error: refreshError } = await supabase
       .from('profiles')
       .select('household_id')
       .eq('id', user.id)
       .single()
+    console.log('[flush] 4. re-query — household_id:', refreshed?.household_id ?? null, '| error:', refreshError?.message ?? null)
     if (!refreshed?.household_id) {
       return Response.json({ error: 'household_id_missing_after_create' }, { status: 500 })
     }
@@ -54,31 +61,38 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. Purge existing onboarding prefs (idempotence)
-  const { error: deletePrefsError } = await supabase
+  const { error: deletePrefsError, count: deletedCount } = await supabase
     .from('food_preferences')
     .delete()
     .eq('household_id', householdId)
     .in('type', ['cuisine_style', 'exclude'])
 
+  console.log('[flush] 5. delete prefs — deleted:', deletedCount ?? 'n/a', '| error:', deletePrefsError?.message ?? null, '| code:', deletePrefsError?.code ?? null)
   if (deletePrefsError) {
-    return Response.json({ error: 'delete_prefs_failed' }, { status: 500 })
+    return Response.json({ error: 'delete_prefs_failed', detail: deletePrefsError.message }, { status: 500 })
   }
 
   // 6. Insert cuisine styles
   if (cuisineStyles.length > 0) {
-    const { error } = await supabase.from('food_preferences').insert(
+    const { error, count } = await supabase.from('food_preferences').insert(
       cuisineStyles.map((value) => ({ household_id: householdId, type: 'cuisine_style', value })),
     )
-    if (error) return Response.json({ error: 'insert_styles_failed' }, { status: 500 })
+    console.log('[flush] 6. insert styles — count:', count ?? cuisineStyles.length, '| error:', error?.message ?? null, '| code:', error?.code ?? null)
+    if (error) return Response.json({ error: 'insert_styles_failed', detail: error.message }, { status: 500 })
+  } else {
+    console.log('[flush] 6. insert styles — skipped (empty)')
   }
 
   // 7. Insert allergies (skip "Aucune")
   const allergiesToStore = allergies.filter((a) => a !== 'Aucune')
   if (allergiesToStore.length > 0) {
-    const { error } = await supabase.from('food_preferences').insert(
+    const { error, count } = await supabase.from('food_preferences').insert(
       allergiesToStore.map((value) => ({ household_id: householdId, type: 'exclude', value })),
     )
-    if (error) return Response.json({ error: 'insert_allergies_failed' }, { status: 500 })
+    console.log('[flush] 7. insert allergies — count:', count ?? allergiesToStore.length, '| error:', error?.message ?? null, '| code:', error?.code ?? null)
+    if (error) return Response.json({ error: 'insert_allergies_failed', detail: error.message }, { status: 500 })
+  } else {
+    console.log('[flush] 7. insert allergies — skipped (none or Aucune)')
   }
 
   // 8. Pre-check existing inventory, then insert only missing items
@@ -88,8 +102,9 @@ export async function POST(request: NextRequest) {
       .select('canonical_name')
       .eq('household_id', householdId)
 
+    console.log('[flush] 8. inventory check — existing:', existing?.length ?? 0, '| error:', existingError?.message ?? null, '| code:', existingError?.code ?? null)
     if (existingError) {
-      return Response.json({ error: 'inventory_check_failed' }, { status: 500 })
+      return Response.json({ error: 'inventory_check_failed', detail: existingError.message }, { status: 500 })
     }
 
     const existingCanonicals = new Set(
@@ -115,14 +130,19 @@ export async function POST(request: NextRequest) {
         added_by:              user.id,
       }))
 
+    console.log('[flush] 8. inventory insert — toInsert:', toInsert.length, 'of', fridgeItems.length, 'items')
+
     if (toInsert.length > 0) {
       const { error: insertError } = await supabase
         .from('inventory_items')
         .insert(toInsert)
+      console.log('[flush] 8. inventory insert result — error:', insertError?.message ?? null, '| code:', insertError?.code ?? null)
       if (insertError) {
-        return Response.json({ error: 'insert_inventory_failed' }, { status: 500 })
+        return Response.json({ error: 'insert_inventory_failed', detail: insertError.message }, { status: 500 })
       }
     }
+  } else {
+    console.log('[flush] 8. inventory — skipped (no fridgeItems)')
   }
 
   // 9. Commit — only if everything above succeeded
@@ -131,9 +151,11 @@ export async function POST(request: NextRequest) {
     .update({ onboarded: true })
     .eq('id', user.id)
 
+  console.log('[flush] 9. onboarded — error:', onboardedError?.message ?? null, '| code:', onboardedError?.code ?? null)
   if (onboardedError) {
-    return Response.json({ error: 'onboarded_flag_failed' }, { status: 500 })
+    return Response.json({ error: 'onboarded_flag_failed', detail: onboardedError.message }, { status: 500 })
   }
 
+  console.log('[flush] done — ok')
   return Response.json({ ok: true })
 }
