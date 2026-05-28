@@ -95,19 +95,20 @@ export const onboarding = {
       fridge: 'frigo',
     },
     summaryNone: 'Aucune',
+    summaryNoneM: 'Aucun',
     summaryHousehold: (size: number, hasKids: boolean | null) =>
-      `${size} personne${size > 1 ? 's' : ''}` + (hasKids ? ' · avec enfants' : ''),
+      `${size} personne${size > 1 ? 's' : ''}` + (hasKids ? ' • enfants inclus' : ''),
     summaryFridgeCount: (n: number) =>
       n === 0 ? 'Aucun produit' : `${n} produit${n > 1 ? 's' : ''}`,
     teaserKicker: 'BIENTÔT SUR VOTRE TABLE',
     teaserPlaceholders: [
-      'Votre 1ère idée de repas',
-      'Votre 2ème idée de repas',
-      'Votre 3ème idée de repas',
+      { title: 'Votre 1ère idée de repas',  sub: 'Prête en moins de 30 min' },
+      { title: 'Votre 2ème idée de repas',  sub: 'À partir de vos produits' },
+      { title: 'Votre 3ème idée de repas',  sub: 'Adaptée à votre famille'  },
     ],
     cta: 'Découvrir mes 3 recettes ✨',
-    subCta: '⏱ Environ 10 secondes',
-    editLink: 'Modifier mes réponses',
+    subCta: 'Création des recettes ~10 sec',
+    editLink: '← Modifier mes réponses',
   },
   cooking: {
     kicker: 'EN CUISINE',

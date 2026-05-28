@@ -18,8 +18,13 @@ export default function ReadyPage() {
     householdSize !== null
       ? copy.summaryHousehold(householdSize, hasKids)
       : copy.summaryNone
-  const tastesLine =
-    cuisineStyles.length > 0 ? cuisineStyles.join(', ') : copy.summaryNone
+
+  const tastesLine = (() => {
+    if (cuisineStyles.length === 0) return copy.summaryNoneM
+    if (cuisineStyles.length <= 2) return cuisineStyles.join(' • ')
+    return `${cuisineStyles[0]} • ${cuisineStyles[1]} • +${cuisineStyles.length - 2}`
+  })()
+
   const allergiesLine =
     allergies.length > 0 ? allergies.join(', ') : copy.summaryNone
   const fridgeLine = copy.summaryFridgeCount(fridgeItems.length)
@@ -53,25 +58,25 @@ export default function ReadyPage() {
         </div>
 
         {/* Summary */}
-        <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
-          {summaryRows.map(({ label, value }) => (
-            <div key={label} className="flex items-start justify-between gap-4 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-widest text-ink-3 shrink-0 pt-0.5">
-                {label}
-              </p>
-              <p className="text-sm text-foreground text-right leading-snug">
-                {value}
-              </p>
-            </div>
-          ))}
-          <div className="px-4 py-3 flex justify-end">
-            <button
-              onClick={() => router.push('/onboarding/household')}
-              className="text-xs text-ink-2 underline-offset-4 hover:underline"
-            >
-              {copy.editLink}
-            </button>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+            {summaryRows.map(({ label, value }) => (
+              <div key={label} className="flex items-start justify-between gap-4 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-widest text-ink-3 shrink-0 pt-0.5">
+                  {label}
+                </p>
+                <p className="text-sm text-foreground text-right leading-snug">
+                  {value}
+                </p>
+              </div>
+            ))}
           </div>
+          <button
+            onClick={() => router.push('/onboarding/household')}
+            className="text-xs text-ink-2 underline-offset-4 hover:underline text-left w-fit"
+          >
+            {copy.editLink}
+          </button>
         </div>
 
         {/* Teaser cards */}
@@ -80,13 +85,16 @@ export default function ReadyPage() {
             {copy.teaserKicker}
           </p>
           <div className="flex flex-col gap-2">
-            {copy.teaserPlaceholders.map((title, i) => (
+            {copy.teaserPlaceholders.map(({ title, sub }, i) => (
               <div
                 key={i}
                 className="rounded-2xl bg-surface border border-border px-4 py-3 flex items-center gap-3"
               >
                 <div className="w-10 h-10 rounded-xl bg-surface-muted flex-shrink-0" />
-                <p className="text-sm font-medium text-foreground">{title}</p>
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-medium text-foreground">{title}</p>
+                  <p className="text-xs text-ink-2">{sub}</p>
+                </div>
               </div>
             ))}
           </div>
