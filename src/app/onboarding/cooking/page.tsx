@@ -51,7 +51,7 @@ export default function CookingPage() {
       if (!res.ok) throw new Error('suggest_failed')
       const data = await res.json()
       try {
-        sessionStorage.setItem(`miamily_recipes_${hid}`, JSON.stringify({
+        localStorage.setItem(`miamily_recipes_ob_${hid}`, JSON.stringify({
           recipes: data.recipes ?? [],
           mode: 'normal',
           mealMoment,

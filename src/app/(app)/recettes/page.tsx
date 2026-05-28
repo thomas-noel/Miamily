@@ -104,7 +104,8 @@ export default function RecettesPage() {
       const hid = profile.household_id as string
       setHouseholdId(hid)
 
-      // Restore sessionStorage cache (6h TTL)
+      // Restore cache — sessionStorage (6h, current session) first, then localStorage onboarding (24h, persistent)
+      let cacheLoaded = false
       try {
         const raw = sessionStorage.getItem(`miamily_recipes_${hid}`)
         if (raw) {
@@ -123,11 +124,39 @@ export default function RecettesPage() {
             setResultsType(cached.mealType)
             setGeneratedAt(new Date(cached.generatedAt))
             setStep('results')
+            cacheLoaded = true
           } else {
             sessionStorage.removeItem(`miamily_recipes_${hid}`)
           }
         }
       } catch {}
+
+      // Fallback: onboarding recipes stored in localStorage (24h TTL, survives app close)
+      if (!cacheLoaded) {
+        try {
+          const raw = localStorage.getItem(`miamily_recipes_ob_${hid}`)
+          if (raw) {
+            const cached = JSON.parse(raw) as {
+              recipes: Recipe[]; mode: RecipeMode; mealMoment: MealMoment
+              mealType: MealType; generatedAt: string
+            }
+            const age = Date.now() - new Date(cached.generatedAt).getTime()
+            if (age < 24 * 60 * 60 * 1000) {
+              setRecipes(cached.recipes)
+              setMode(cached.mode)
+              setMealMoment(cached.mealMoment)
+              setMealType(cached.mealType)
+              setResultsMode(cached.mode)
+              setResultsMoment(cached.mealMoment)
+              setResultsType(cached.mealType)
+              setGeneratedAt(new Date(cached.generatedAt))
+              setStep('results')
+            } else {
+              localStorage.removeItem(`miamily_recipes_ob_${hid}`)
+            }
+          }
+        } catch {}
+      }
 
       // Load saved recipes from Supabase
       const { data: saved } = await supabase
