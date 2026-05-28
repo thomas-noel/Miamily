@@ -15,10 +15,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('household_id')
+    .select('household_id, onboarded')
     .eq('id', user.id)
     .single()
 
+  if (profile?.onboarded === false) redirect('/onboarding/welcome')
   if (!profile?.household_id) redirect('/household/create')
 
   return (
