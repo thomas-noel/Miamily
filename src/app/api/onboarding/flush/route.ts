@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     .from('food_preferences')
     .delete()
     .eq('household_id', householdId)
-    .in('type', ['cuisine_style', 'exclude'])
+    .in('type', ['include', 'exclude'])
 
   console.log('[flush] 5. delete prefs — deleted:', deletedCount ?? 'n/a', '| error:', deletePrefsError?.message ?? null, '| code:', deletePrefsError?.code ?? null)
   if (deletePrefsError) {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
   // 6. Insert cuisine styles
   if (cuisineStyles.length > 0) {
     const { error, count } = await supabase.from('food_preferences').insert(
-      cuisineStyles.map((value) => ({ household_id: householdId, type: 'cuisine_style', value })),
+      cuisineStyles.map((value) => ({ household_id: householdId, type: 'include', value })),
     )
     console.log('[flush] 6. insert styles — count:', count ?? cuisineStyles.length, '| error:', error?.message ?? null, '| code:', error?.code ?? null)
     if (error) return Response.json({ error: 'insert_styles_failed', detail: error.message }, { status: 500 })
