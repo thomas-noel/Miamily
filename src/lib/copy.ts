@@ -52,6 +52,8 @@ export const onboarding = {
     otherLink: '+ Autre allergie',
     privacy: '🔒 Vos données restent privées.',
     cta: 'Continuer',
+    options: ['Aucune', 'Gluten', 'Lactose', 'Fruits à coque', 'Œufs', 'Poisson', 'Crustacés'],
+    extendedOptions: ['Soja', 'Sésame', 'Arachides', 'Moutarde', 'Sulfites', 'Céleri'],
   },
   fridge: {
     kicker: '04 · PREMIERS PRODUITS',
