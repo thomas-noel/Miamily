@@ -98,14 +98,6 @@ export default function FridgePage() {
           </div>
         </div>
 
-        {/* J'ai déjà ma liste */}
-        <button
-          onClick={handleNext}
-          className="text-sm text-ink-2 underline-offset-4 hover:underline text-left w-fit"
-        >
-          {copy.altList}
-        </button>
-
       </div>
 
       <StickyCTA
