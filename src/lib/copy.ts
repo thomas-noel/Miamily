@@ -94,7 +94,17 @@ export const onboarding = {
       allergies: 'allergies',
       fridge: 'frigo',
     },
+    summaryNone: 'Aucune',
+    summaryHousehold: (size: number, hasKids: boolean | null) =>
+      `${size} personne${size > 1 ? 's' : ''}` + (hasKids ? ' · avec enfants' : ''),
+    summaryFridgeCount: (n: number) =>
+      n === 0 ? 'Aucun produit' : `${n} produit${n > 1 ? 's' : ''}`,
     teaserKicker: 'BIENTÔT SUR VOTRE TABLE',
+    teaserPlaceholders: [
+      'Votre 1ère idée de repas',
+      'Votre 2ème idée de repas',
+      'Votre 3ème idée de repas',
+    ],
     cta: 'Découvrir mes 3 recettes ✨',
     subCta: '⏱ Environ 10 secondes',
     editLink: 'Modifier mes réponses',
