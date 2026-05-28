@@ -22,7 +22,9 @@
       "Bash(git commit *)",
       "Bash(git push *)",
       "Bash(pnpm lint *)",
-      "Bash(xargs cat)"
+      "Bash(xargs cat)",
+      "Bash(git *)",
+      "Bash(pnpm build *)"
     ]
   }
 }
