@@ -157,5 +157,5 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('[flush] done — ok')
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, householdId })
 }

@@ -398,7 +398,7 @@ export async function POST(request: NextRequest) {
   if (inventory.length === 0) return Response.json({ error: 'empty_inventory' }, { status: 400 })
 
   const excludes = (prefsData ?? []).filter((p) => p.type === 'exclude').map((p) => p.value as string)
-  const cuisineStyleIds = (prefsData ?? []).filter((p) => p.type === 'cuisine_style').map((p) => p.value as string)
+  const cuisineStyleIds = (prefsData ?? []).filter((p) => p.type === 'include').map((p) => p.value as string)
   const recentMeals = (mealsData ?? []).map((m) => m.name as string)
   const lastHeaviness = (mealsData ?? [])[0]?.heaviness as string ?? ''
   const allMembers = (membersData ?? []) as FoodMemberRow[]

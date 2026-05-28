@@ -127,6 +127,7 @@ export const onboarding = {
     footer: 'Habituellement moins de 10 secondes',
     footerSlow: 'Encore quelques secondes…',
     footerRetry: 'Réessayer',
+    suggestError: "On n'a pas pu préparer vos recettes automatiquement. Vous pourrez les générer depuis l'écran Recettes.",
     ctaDone: 'Voir mes recettes',
   },
 }

@@ -8,8 +8,17 @@ import { LoadingRow } from '@/components/onboarding/LoadingRow'
 
 type RowState = 'pending' | 'active' | 'done'
 type FlushStatus = 'flushing' | 'done' | 'error'
+type SuggestStatus = 'idle' | 'loading' | 'done' | 'error'
 
 const STEP_TIMINGS = [1800, 3600, 5400, 7400]
+
+function defaultMealMoment(): string {
+  const h = new Date().getHours()
+  if (h >= 6 && h < 10) return 'petit-dej'
+  if (h >= 11 && h < 14) return 'dejeuner'
+  if (h >= 15 && h < 18) return 'gouter'
+  return 'diner'
+}
 
 export default function CookingPage() {
   const router = useRouter()
@@ -27,7 +36,34 @@ export default function CookingPage() {
 
   const [activeStep, setActiveStep] = useState(0)
   const [flushStatus, setFlushStatus] = useState<FlushStatus>('flushing')
+  const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>('idle')
   const isDone = activeStep >= 4
+
+  const doSuggest = useCallback(async (hid: string) => {
+    setSuggestStatus('loading')
+    try {
+      const mealMoment = defaultMealMoment()
+      const res = await fetch('/api/recettes/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'normal', mealMoment, mealType: 'sale' }),
+      })
+      if (!res.ok) throw new Error('suggest_failed')
+      const data = await res.json()
+      try {
+        sessionStorage.setItem(`miamily_recipes_${hid}`, JSON.stringify({
+          recipes: data.recipes ?? [],
+          mode: 'normal',
+          mealMoment,
+          mealType: 'sale',
+          generatedAt: new Date().toISOString(),
+        }))
+      } catch {}
+      setSuggestStatus('done')
+    } catch {
+      setSuggestStatus('error')
+    }
+  }, [])
 
   const doFlush = useCallback(async () => {
     setFlushStatus('flushing')
@@ -38,11 +74,13 @@ export default function CookingPage() {
         body: JSON.stringify({ cuisineStyles, allergies, fridgeItems }),
       })
       if (!res.ok) throw new Error('flush_failed')
+      const { householdId } = await res.json()
       setFlushStatus('done')
+      doSuggest(householdId)
     } catch {
       setFlushStatus('error')
     }
-  }, [cuisineStyles, allergies, fridgeItems])
+  }, [cuisineStyles, allergies, fridgeItems, doSuggest])
 
   // Trigger flush once on mount
   useEffect(() => {
@@ -93,16 +131,7 @@ export default function CookingPage() {
     if (!isDone) {
       return <p className="text-xs text-ink-3">{copy.footer}</p>
     }
-    if (flushStatus === 'done') {
-      return (
-        <button
-          onClick={handleNavigate}
-          className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-base font-medium hover:opacity-90 transition-opacity"
-        >
-          {copy.ctaDone}
-        </button>
-      )
-    }
+    // Flush failed → retry
     if (flushStatus === 'error') {
       return (
         <button
@@ -113,8 +142,37 @@ export default function CookingPage() {
         </button>
       )
     }
-    // flushStatus === 'flushing' — animation finished but flush still in flight (< 1% of cases)
-    return <p className="text-xs text-ink-3">{copy.footerSlow}</p>
+    // Flush ok + suggest ok → CTA
+    if (flushStatus === 'done' && suggestStatus === 'done') {
+      return (
+        <button
+          onClick={handleNavigate}
+          className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-base font-medium hover:opacity-90 transition-opacity"
+        >
+          {copy.ctaDone}
+        </button>
+      )
+    }
+    // Flush ok + suggest failed → message + CTA quand même
+    if (flushStatus === 'done' && suggestStatus === 'error') {
+      return (
+        <div className="flex flex-col gap-3 w-full">
+          <p className="text-xs text-ink-2 text-center">{copy.suggestError}</p>
+          <button
+            onClick={handleNavigate}
+            className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-base font-medium hover:opacity-90 transition-opacity"
+          >
+            {copy.ctaDone}
+          </button>
+        </div>
+      )
+    }
+    // Flush en cours OU flush ok + suggest en cours
+    return (
+      <p className="text-xs text-ink-3">
+        {flushStatus === 'flushing' ? copy.footer : copy.footerSlow}
+      </p>
+    )
   }
 
   return (
