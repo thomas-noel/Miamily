@@ -1,25 +1,110 @@
-import Link from 'next/link'
+'use client'
+
+import { useRouter } from 'next/navigation'
+import { useOnboardingStore } from '@/store/onboarding'
+import { onboarding } from '@/lib/copy'
+import { TopBar } from '@/components/onboarding/TopBar'
+import { ProgressDots } from '@/components/onboarding/ProgressDots'
+import { Chip } from '@/components/onboarding/Chip'
+import { StickyCTA } from '@/components/onboarding/StickyCTA'
 
 export default function FridgePage() {
+  const router = useRouter()
+  const { fridgeItems, setFridgeItems } = useOnboardingStore()
+  const copy = onboarding.fridge
+
+  function toggle(item: string) {
+    if (fridgeItems.includes(item)) {
+      setFridgeItems(fridgeItems.filter((i) => i !== item))
+    } else {
+      setFridgeItems([...fridgeItems, item])
+    }
+  }
+
+  const count = fridgeItems.length
+  const ctaLabel = count === 0 ? copy.ctaEmpty : copy.cta(count)
+
+  function handleNext() {
+    router.push('/onboarding/ready')
+  }
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-6 p-8">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-ink-3">onboarding flow test</p>
-      <p className="text-xs text-ink-3">5 / 7</p>
-      <h1 className="font-serif text-3xl text-foreground">S5 — Premiers produits</h1>
-      <div className="flex gap-3 mt-4">
-        <Link
-          href="/onboarding/allergies"
-          className="px-5 py-2.5 rounded-xl border border-border text-sm text-foreground hover:bg-surface-muted transition-colors"
+    <div className="flex flex-col min-h-dvh bg-background">
+
+      <TopBar
+        backHref="/onboarding/allergies"
+        skip={
+          <button
+            onClick={handleNext}
+            className="text-sm text-ink-2 hover:text-foreground transition-colors"
+          >
+            {copy.skipLink}
+          </button>
+        }
+      />
+      <ProgressDots current={4} total={5} />
+
+      <div className="flex-1 px-6 pt-4 pb-36 flex flex-col gap-8">
+
+        {/* Header */}
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-medium uppercase tracking-widest text-ink-3">
+            {copy.kicker}
+          </p>
+          <h1 className="font-serif text-[32px] leading-[1.1] tracking-[-0.5px] text-foreground">
+            {copy.title}
+          </h1>
+          <p className="text-sm text-ink-2 leading-relaxed">
+            {copy.sub}
+          </p>
+        </div>
+
+        {/* Hero express block */}
+        <div className="rounded-2xl bg-surface border border-border px-5 py-4 flex flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-primary">
+              {copy.heroKicker}
+            </p>
+            <p className="font-semibold text-foreground text-base">{copy.heroTitle}</p>
+            <p className="text-xs text-ink-2">{copy.heroSub}</p>
+          </div>
+          <ul className="flex flex-col gap-1">
+            {copy.promises.map((promise) => (
+              <li key={promise} className="text-xs text-ink-2">{promise}</li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Checklist produits */}
+        <div className="flex flex-wrap gap-2">
+          {copy.items.map((item) => (
+            <Chip
+              key={item}
+              on={fridgeItems.includes(item)}
+              onClick={() => toggle(item)}
+            >
+              {item}
+            </Chip>
+          ))}
+        </div>
+
+        {/* J'ai déjà ma liste */}
+        <button
+          onClick={handleNext}
+          className="text-sm text-ink-2 underline-offset-4 hover:underline text-left w-fit"
         >
-          ← Précédent
-        </Link>
-        <Link
-          href="/onboarding/ready"
-          className="px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          Suivant →
-        </Link>
+          {copy.altList}
+        </button>
+
       </div>
+
+      <StickyCTA
+        onPress={handleNext}
+        sub={copy.subCta}
+      >
+        {ctaLabel}
+      </StickyCTA>
+
     </div>
   )
 }
