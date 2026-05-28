@@ -123,9 +123,11 @@ export const onboarding = {
         `Votre famille, c'est fait · ${a} adulte${a > 1 ? 's' : ''}, ${k} enfant${k > 1 ? 's' : ''}`,
       generating: 'Création de vos recettes · presque prêt',
     },
+    tastesEmpty: 'vos préférences',
     footer: 'Habituellement moins de 10 secondes',
     footerSlow: 'Encore quelques secondes…',
     footerRetry: 'Réessayer',
+    ctaDone: 'Voir mes recettes',
   },
 }
 
