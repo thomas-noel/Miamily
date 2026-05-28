@@ -1,14 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-type HouseholdSize = 1 | 2 | 3 | 4 | '5+'
 type OpenToDiscovery = 'classic' | 'mix' | 'curious' | null
 type GenerationStatus = 'idle' | 'loading' | 'success' | 'error'
 
 interface OnboardingState {
   currentStep: number
-  householdSize: HouseholdSize
-  hasKids: boolean
+  householdSize: number | null
+  hasKids: boolean | null
   kidsAges: string[]
   cuisineStyles: string[]
   openToDiscovery: OpenToDiscovery
@@ -18,8 +17,8 @@ interface OnboardingState {
   generationStatus: GenerationStatus
 
   setCurrentStep: (step: number) => void
-  setHouseholdSize: (size: HouseholdSize) => void
-  setHasKids: (value: boolean) => void
+  setHouseholdSize: (size: number) => void
+  setHasKids: (value: boolean | null) => void
   setKidsAges: (ages: string[]) => void
   setCuisineStyles: (styles: string[]) => void
   setOpenToDiscovery: (mood: OpenToDiscovery) => void
@@ -32,8 +31,8 @@ interface OnboardingState {
 
 const INITIAL_STATE = {
   currentStep: 1,
-  householdSize: 2 as HouseholdSize,
-  hasKids: false,
+  householdSize: null as number | null,
+  hasKids: null as boolean | null,
   kidsAges: [] as string[],
   cuisineStyles: [] as string[],
   openToDiscovery: null as OpenToDiscovery,
@@ -48,31 +47,29 @@ export const useOnboardingStore = create<OnboardingState>()(
     (set) => ({
       ...INITIAL_STATE,
 
-      setCurrentStep:      (step)     => set({ currentStep: step }),
-      setHouseholdSize:    (size)     => set({ householdSize: size }),
-      setHasKids:          (value)    => set({ hasKids: value }),
-      setKidsAges:         (ages)     => set({ kidsAges: ages }),
-      setCuisineStyles:    (styles)   => set({ cuisineStyles: styles }),
-      setOpenToDiscovery:  (mood)     => set({ openToDiscovery: mood }),
+      setCurrentStep:      (step)      => set({ currentStep: step }),
+      setHouseholdSize:    (size)      => set({ householdSize: size }),
+      setHasKids:          (value)     => set({ hasKids: value }),
+      setKidsAges:         (ages)      => set({ kidsAges: ages }),
+      setCuisineStyles:    (styles)    => set({ cuisineStyles: styles }),
+      setOpenToDiscovery:  (mood)      => set({ openToDiscovery: mood }),
       setAllergies:        (allergies) => set({ allergies }),
-      setFridgeItems:      (items)    => set({ fridgeItems: items }),
-      setGeneratedRecipes: (recipes)  => set({ generatedRecipes: recipes }),
-      setGenerationStatus: (status)   => set({ generationStatus: status }),
-      reset:               ()         => set(INITIAL_STATE),
+      setFridgeItems:      (items)     => set({ fridgeItems: items }),
+      setGeneratedRecipes: (recipes)   => set({ generatedRecipes: recipes }),
+      setGenerationStatus: (status)    => set({ generationStatus: status }),
+      reset:               ()          => set(INITIAL_STATE),
     }),
     {
       name: 'miamily-onboarding',
-      // generatedRecipes et generationStatus ne sont pas persistés :
-      // les recettes ne survivent pas au refresh, le statut se recalcule
       partialize: (state) => ({
-        currentStep:      state.currentStep,
-        householdSize:    state.householdSize,
-        hasKids:          state.hasKids,
-        kidsAges:         state.kidsAges,
-        cuisineStyles:    state.cuisineStyles,
-        openToDiscovery:  state.openToDiscovery,
-        allergies:        state.allergies,
-        fridgeItems:      state.fridgeItems,
+        currentStep:     state.currentStep,
+        householdSize:   state.householdSize,
+        hasKids:         state.hasKids,
+        kidsAges:        state.kidsAges,
+        cuisineStyles:   state.cuisineStyles,
+        openToDiscovery: state.openToDiscovery,
+        allergies:       state.allergies,
+        fridgeItems:     state.fridgeItems,
       }),
     }
   )

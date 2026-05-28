@@ -12,6 +12,7 @@ export const onboarding = {
     kidsQ: 'DES ENFANTS PARMI EUX ?',
     agesQ: 'QUEL ÂGE ? · OPTIONNEL',
     agesNote: 'Pour proposer des recettes adaptées aux plus jeunes.',
+    ageOptions: ['< 2 ans', '2–5 ans', '6–10 ans', '11+ ans'],
     cta: 'Continuer',
   },
   tastes: {
