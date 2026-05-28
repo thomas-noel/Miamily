@@ -3,7 +3,7 @@ export const onboarding = {
     title: 'Le dîner ce soir, déjà réglé.',
     body: '3 idées de repas pour votre famille, prêtes en 1 minute.',
     cta: 'Démarrer',
-    subCta: 'Sans création de compte',
+    subCta: 'Prêt en moins d\'1 minute',
   },
   household: {
     kicker: '01 · VOTRE FOYER',
@@ -23,6 +23,27 @@ export const onboarding = {
     discoveryLabel: 'OUVERT AUX NOUVEAUTÉS ?',
     cta: 'Continuer',
     subCta: 'Modifiable à tout moment dans Famille',
+    styles: [
+      'Rapide & facile',
+      'Méditerranéen',
+      'Asiatique',
+      'Traditionnel français',
+      'Végétarien',
+      'Pasta & riz',
+    ],
+    extendedStyles: [
+      'Grillades',
+      'Soupes & veloutés',
+      'Healthy & léger',
+      'Tex-Mex',
+      'Street food',
+      'Cuisine du monde',
+    ],
+    moodOptions: [
+      { value: 'classic' as const, title: 'Les classiques',      sub: "Ce qu'on aime, on le refait" },
+      { value: 'mix'     as const, title: 'Variété & équilibre', sub: 'Un peu de tout, selon les envies' },
+      { value: 'curious' as const, title: 'Nouvelles saveurs',   sub: 'On aime découvrir et surprendre' },
+    ],
   },
   allergies: {
     kicker: '03 · ALLERGIES',
