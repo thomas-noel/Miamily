@@ -12,14 +12,6 @@ type SuggestStatus = 'idle' | 'loading' | 'done' | 'error'
 
 const STEP_TIMINGS = [1800, 3600, 5400, 7400]
 
-function defaultMealMoment(): string {
-  const h = new Date().getHours()
-  if (h >= 6 && h < 10) return 'petit-dej'
-  if (h >= 11 && h < 14) return 'dejeuner'
-  if (h >= 15 && h < 18) return 'gouter'
-  return 'diner'
-}
-
 export default function CookingPage() {
   const router = useRouter()
   const {
@@ -42,7 +34,7 @@ export default function CookingPage() {
   const doSuggest = useCallback(async (hid: string) => {
     setSuggestStatus('loading')
     try {
-      const mealMoment = defaultMealMoment()
+      const mealMoment = 'diner'
       const res = await fetch('/api/recettes/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

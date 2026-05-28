@@ -78,7 +78,9 @@ export default function RecettesPage() {
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>([])
   const [currentSavedId, setCurrentSavedId] = useState<string | null>(null)
+  const [fromOnboarding, setFromOnboarding] = useState(false)
   const fetchingRef = useRef(false)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   const [quotaUsed, setQuotaUsed] = useState<number | null>(null)
   const [quotaTotal, setQuotaTotal] = useState(20)
@@ -151,6 +153,7 @@ export default function RecettesPage() {
               setResultsType(cached.mealType)
               setGeneratedAt(new Date(cached.generatedAt))
               setStep('results')
+              setFromOnboarding(true)
             } else {
               localStorage.removeItem(`miamily_recipes_ob_${hid}`)
             }
@@ -176,6 +179,15 @@ export default function RecettesPage() {
     loadMembers()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Scroll to results when arriving from onboarding with pre-generated recipes
+  useEffect(() => {
+    if (fromOnboarding && step === 'results' && resultsRef.current) {
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 150)
+    }
+  }, [fromOnboarding, step])
 
   const isStale = step === 'results' && resultsMode !== null && (
     mode !== resultsMode || mealMoment !== resultsMoment || mealType !== resultsType
@@ -416,7 +428,7 @@ export default function RecettesPage() {
 
           {/* Résultats */}
           {step === 'results' && (
-            <div className="px-5 space-y-3">
+            <div ref={resultsRef} className="px-5 space-y-3">
               {isStale && (
                 <div className="rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent-ink flex items-center gap-2">
                   <RefreshCw className="w-3.5 h-3.5 shrink-0" />
