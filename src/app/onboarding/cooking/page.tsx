@@ -1,32 +1,66 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useOnboardingStore } from '@/store/onboarding'
 import { onboarding } from '@/lib/copy'
 import { LoadingRow } from '@/components/onboarding/LoadingRow'
 
 type RowState = 'pending' | 'active' | 'done'
+type FlushStatus = 'flushing' | 'done' | 'error'
 
-// Step index 0–3: which row is currently active. 4 = all done.
 const STEP_TIMINGS = [1800, 3600, 5400, 7400]
 
 export default function CookingPage() {
   const router = useRouter()
-  const { fridgeItems, cuisineStyles, householdSize, hasKids, kidsAges } =
-    useOnboardingStore()
+  const {
+    cuisineStyles,
+    allergies,
+    fridgeItems,
+    householdSize,
+    hasKids,
+    kidsAges,
+    reset,
+  } = useOnboardingStore()
 
   const copy = onboarding.cooking
 
   const [activeStep, setActiveStep] = useState(0)
+  const [flushStatus, setFlushStatus] = useState<FlushStatus>('flushing')
   const isDone = activeStep >= 4
 
+  const doFlush = useCallback(async () => {
+    setFlushStatus('flushing')
+    try {
+      const res = await fetch('/api/onboarding/flush', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cuisineStyles, allergies, fridgeItems }),
+      })
+      if (!res.ok) throw new Error('flush_failed')
+      setFlushStatus('done')
+    } catch {
+      setFlushStatus('error')
+    }
+  }, [cuisineStyles, allergies, fridgeItems])
+
+  // Trigger flush once on mount
+  useEffect(() => {
+    doFlush()
+  }, [doFlush])
+
+  // Animate rows independently of flush
   useEffect(() => {
     const timers = STEP_TIMINGS.map((delay, i) =>
       setTimeout(() => setActiveStep(i + 1), delay),
     )
     return () => timers.forEach(clearTimeout)
   }, [])
+
+  function handleNavigate() {
+    reset()
+    router.push('/recettes')
+  }
 
   // Personalized row labels with store values, fallbacks if empty
   const stockLine = copy.checks.stock(fridgeItems.length)
@@ -55,6 +89,34 @@ export default function CookingPage() {
     return 'pending'
   }
 
+  function renderCTA() {
+    if (!isDone) {
+      return <p className="text-xs text-ink-3">{copy.footer}</p>
+    }
+    if (flushStatus === 'done') {
+      return (
+        <button
+          onClick={handleNavigate}
+          className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-base font-medium hover:opacity-90 transition-opacity"
+        >
+          {copy.ctaDone}
+        </button>
+      )
+    }
+    if (flushStatus === 'error') {
+      return (
+        <button
+          onClick={doFlush}
+          className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-base font-medium hover:opacity-90 transition-opacity"
+        >
+          {copy.footerRetry}
+        </button>
+      )
+    }
+    // flushStatus === 'flushing' — animation finished but flush still in flight (< 1% of cases)
+    return <p className="text-xs text-ink-3">{copy.footerSlow}</p>
+  }
+
   return (
     <div className="flex flex-col min-h-dvh bg-background items-center justify-center px-6">
       <div className="w-full max-w-sm flex flex-col gap-10">
@@ -79,17 +141,8 @@ export default function CookingPage() {
         </div>
 
         {/* Footer / CTA */}
-        <div className="h-12 flex items-center">
-          {isDone ? (
-            <button
-              onClick={() => router.push('/recettes')}
-              className="w-full h-12 rounded-xl bg-primary text-primary-foreground text-base font-medium hover:opacity-90 transition-opacity"
-            >
-              {copy.ctaDone}
-            </button>
-          ) : (
-            <p className="text-xs text-ink-3">{copy.footer}</p>
-          )}
+        <div className="min-h-12 flex items-center">
+          {renderCTA()}
         </div>
 
       </div>
